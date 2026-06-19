@@ -25,6 +25,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     var isTargetInCrosshair = mutableStateOf(false)
         private set
 
+    var successfulHitCount = mutableStateOf(0)
+        private set
+
     private var lastLockStatus = false
 
     init {
@@ -38,6 +41,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 } else if (shooterId == client.playerId) {
                     // Local player hit someone
                     soundHaptic.playHitConfirmSound()
+                    successfulHitCount.value += 1
                 }
             }
         }
@@ -48,6 +52,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     // Local player eliminated
                     soundHaptic.playEliminationSound()
                     soundHaptic.vibrateEliminated()
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            client.respawnedEvent.collect { pId ->
+                if (pId == client.playerId) {
+                    soundHaptic.stopVibration()
                 }
             }
         }
@@ -109,6 +121,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun disconnect() {
+        soundHaptic.stopVibration()
         client.disconnect()
         server?.stop()
         server = null

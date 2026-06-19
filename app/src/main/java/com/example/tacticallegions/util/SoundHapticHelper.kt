@@ -61,13 +61,17 @@ class SoundHapticHelper(context: Context) {
     }
 
     fun vibrateEliminated() {
-        val pattern = longArrayOf(0, 150, 100, 150, 100, 400)
+        val pattern = longArrayOf(0, 300, 300) // 300ms vibrate, 300ms pause
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator?.vibrate(VibrationEffect.createWaveform(pattern, -1))
+            vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0))
         } else {
             @Suppress("DEPRECATION")
-            vibrator?.vibrate(pattern, -1)
+            vibrator?.vibrate(pattern, 0)
         }
+    }
+
+    fun stopVibration() {
+        vibrator?.cancel()
     }
 
     private fun vibrate(duration: Long) {

@@ -100,12 +100,14 @@ fun TacticalAppContent(
             )
         }
         matchTimeSeconds != null || countdownTime != null -> {
+            val successfulHitCount by viewModel.successfulHitCount
             GameScreen(
                 players = players,
                 localPlayerId = viewModel.client.playerId,
                 matchTimeSeconds = matchTimeSeconds,
                 countdownTime = countdownTime,
                 isTargetInCrosshair = isTargetInCrosshair,
+                successfulHitCount = successfulHitCount,
                 onTargetStatusChanged = { inCrosshair ->
                     viewModel.setTargetStatus(inCrosshair)
                 },
