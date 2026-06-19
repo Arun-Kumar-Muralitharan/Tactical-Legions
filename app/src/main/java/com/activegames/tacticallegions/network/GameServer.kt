@@ -1,4 +1,4 @@
-package com.example.tacticallegions.network
+package com.activegames.tacticallegions.network
 
 import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
@@ -38,7 +38,8 @@ class GameServer {
     val serverPort = _serverPort.asStateFlow()
 
     private var gameStarted = false
-    private var matchTimeRemaining = 600 // 10 minutes in seconds
+    private var matchTimeRemaining = 600
+    private var customMatchDurationSeconds = 600
 
     fun start(port: Int = 8080) {
         if (serverJob != null) return // Already running
@@ -75,16 +76,20 @@ class GameServer {
                                                 )
                                                 _playersState[message.playerId] = player
                                                 
-                                                broadcast(GameMessage.LobbyUpdate(_playersState.values.toList()))
+                                                broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds))
                                             }
                                             is GameMessage.ToggleReady -> {
                                                 val pId = message.playerId
                                                 val existing = _playersState[pId]
                                                 if (existing != null) {
                                                     _playersState[pId] = existing.copy(isReady = message.isReady)
-                                                    broadcast(GameMessage.LobbyUpdate(_playersState.values.toList()))
+                                                    broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds))
                                                     checkLobbyReadyAndStart()
                                                 }
+                                            }
+                                            is GameMessage.ConfigureMatch -> {
+                                                customMatchDurationSeconds = message.durationSeconds
+                                                broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds))
                                             }
                                             is GameMessage.ActionShoot -> {
                                                 handleShootAction(message.shooterId, message.targetId)
@@ -109,7 +114,7 @@ class GameServer {
                                             _playersState[pId] = existing.copy(isReady = false)
                                         }
                                     }
-                                    broadcast(GameMessage.LobbyUpdate(_playersState.values.toList()))
+                                    broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds))
                                 }
                             }
                         }
@@ -142,9 +147,9 @@ class GameServer {
         if (currentPlayers.isNotEmpty() && currentPlayers.all { it.isReady } && currentPlayers.size <= 8) {
             gameStarted = true
             gameLoopJob = serverScope.launch {
-                // Phase 1: 10s Countdown
-                for (i in 10 downTo 0) {
-                    broadcast(GameMessage.StartGame(countdownSeconds = i, durationSeconds = 600))
+                // Phase 1: 5s Countdown
+                for (i in 5 downTo 0) {
+                    broadcast(GameMessage.StartGame(countdownSeconds = i, durationSeconds = customMatchDurationSeconds))
                     delay(1000)
                 }
                 
@@ -153,10 +158,10 @@ class GameServer {
                     val p = _playersState[pId]!!
                     _playersState[pId] = p.copy(health = 100, isAlive = true, score = 0)
                 }
-                broadcast(GameMessage.LobbyUpdate(_playersState.values.toList()))
+                broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds))
 
-                // Phase 2: In-Game 10m timer (600s)
-                matchTimeRemaining = 600
+                // Phase 2: In-Game custom timer
+                matchTimeRemaining = customMatchDurationSeconds
                 while (matchTimeRemaining > 0) {
                     broadcast(GameMessage.MatchTimerTick(matchTimeRemaining))
                     delay(1000)
@@ -196,7 +201,7 @@ class GameServer {
             
             // Broadcast elimination
             broadcast(GameMessage.PlayerEliminated(targetId = targetId, shooterId = shooterId, respawnSeconds = 5))
-            broadcast(GameMessage.LobbyUpdate(_playersState.values.toList()))
+            broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds))
 
             // Trigger respawn in 5 seconds
             serverScope.launch {
@@ -205,7 +210,7 @@ class GameServer {
                 if (currentTarget != null) {
                     _playersState[targetId] = currentTarget.copy(health = 100, isAlive = true)
                     broadcast(GameMessage.Respawned(targetId))
-                    broadcast(GameMessage.LobbyUpdate(_playersState.values.toList()))
+                    broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds))
                 }
             }
         }

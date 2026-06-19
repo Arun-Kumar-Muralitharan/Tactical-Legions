@@ -1,4 +1,4 @@
-package com.example.tacticallegions.ui.screens
+package com.activegames.tacticallegions.ui.screens
 
 import android.app.Activity
 import android.content.Context
@@ -6,6 +6,7 @@ import android.content.ContextWrapper
 import android.view.WindowManager
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.activity.compose.BackHandler
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.*
@@ -34,9 +35,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import com.example.tacticallegions.camera.FaceAnalyzer
-import com.example.tacticallegions.network.PlayerState
-import com.example.tacticallegions.theme.*
+import com.activegames.tacticallegions.camera.FaceAnalyzer
+import com.activegames.tacticallegions.network.PlayerState
+import com.activegames.tacticallegions.theme.*
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -63,8 +64,30 @@ fun GameScreen(
     val score = localPlayer?.score ?: 0
 
     // Show selection dialog when user tapped trigger and target was locked
-    var showTargetSelector by remember { mutableStateOf(false) }
     var showExitConfirmation by remember { mutableStateOf(false) }
+
+    // Intercept back button during game and show exit confirmation modal
+    BackHandler(enabled = true) {
+        if (!showExitConfirmation) {
+            showExitConfirmation = true
+        } else {
+            showExitConfirmation = false
+        }
+    }
+
+    // Lock-on targeting state
+    val otherPlayers = remember(players) { players.filter { it.id != localPlayerId && it.isAlive } }
+    var activeTargetId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(otherPlayers) {
+        if (otherPlayers.isNotEmpty()) {
+            if (activeTargetId == null || otherPlayers.none { it.id == activeTargetId }) {
+                activeTargetId = otherPlayers.first().id
+            }
+        } else {
+            activeTargetId = null
+        }
+    }
 
     // Hit flashing effect state
     var lastHealth by remember { mutableStateOf(health) }
@@ -184,8 +207,37 @@ fun GameScreen(
         }
 
         // Center Crosshair
-        if (isAlive) {
+        if (isAlive && countdownTime == null) {
             CrosshairWidget(isTargetInCrosshair = isTargetInCrosshair)
+        }
+
+        // --- Countdown Timer Overlay ---
+        AnimatedVisibility(
+            visible = countdownTime != null && countdownTime >= 0,
+            enter = fadeIn() + scaleIn(initialScale = 0.8f),
+            exit = fadeOut() + scaleOut(targetScale = 1.5f),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            if (countdownTime != null) {
+                val displayText = if (countdownTime == 0) "GO!" else "$countdownTime"
+                val displayColor = if (countdownTime == 0) CyberGreen else CyberRed
+                
+                Box(
+                    modifier = Modifier
+                        .size(160.dp)
+                        .background(SurfaceGray.copy(alpha = 0.8f), CircleShape)
+                        .border(BorderStroke(3.dp, displayColor), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = displayText,
+                        fontSize = 64.sp,
+                        fontWeight = FontWeight.Black,
+                        color = displayColor,
+                        letterSpacing = 1.sp
+                    )
+                }
+            }
         }
 
         // Match HUD (Time, Score, Health)
@@ -354,7 +406,8 @@ fun GameScreen(
         }
 
         // Action Trigger Button at the Bottom
-        if (isAlive) {
+        // Action Trigger Button and Lock HUD at the Bottom
+        if (isAlive && countdownTime == null) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -362,98 +415,100 @@ fun GameScreen(
                     .padding(bottom = 32.dp),
                 contentAlignment = Alignment.BottomCenter
             ) {
-                Button(
-                    onClick = {
-                        onShootTriggered()
-                        if (isTargetInCrosshair) {
-                            showTargetSelector = true
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = CyberRed),
-                    shape = CircleShape,
-                    modifier = Modifier
-                        .size(80.dp)
-                        .border(BorderStroke(2.dp, Color.White), CircleShape),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text(
-                        text = "FIRE",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 14.sp,
-                        color = Color.White,
-                        letterSpacing = 1.sp
-                    )
-                }
-            }
-        }
-
-        // Custom Quick Target Confirmation Sheet (when hitting a target)
-        AnimatedVisibility(
-            visible = showTargetSelector && isTargetInCrosshair && isAlive,
-            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-            modifier = Modifier.align(Alignment.BottomCenter)
-        ) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .border(BorderStroke(2.dp, CyberRed), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)),
-                colors = CardDefaults.cardColors(containerColor = SurfaceGray),
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-            ) {
                 Column(
-                    modifier = Modifier.padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text(
-                        text = "CONFIRM TARGET ELIMINATED",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = CyberRed,
-                        letterSpacing = 2.sp
-                    )
-
-                    val otherPlayers = players.filter { it.id != localPlayerId && it.isAlive }
-
-                    if (otherPlayers.isEmpty()) {
-                        Text(
-                            text = "No other active targets alive.",
-                            color = LightOnBackground.copy(alpha = 0.6f),
-                            fontSize = 14.sp
-                        )
-                    } else {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.fillMaxWidth()
+                    // Pre-selection Lock-on Target HUD
+                    if (otherPlayers.size > 1) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .background(SurfaceGray.copy(alpha = 0.85f), RoundedCornerShape(12.dp))
+                                .border(BorderStroke(1.dp, GlassWhite), RoundedCornerShape(12.dp))
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
                         ) {
-                            otherPlayers.forEach { target ->
-                                Button(
-                                    onClick = {
-                                        onConfirmHit(target.id)
-                                        showTargetSelector = false
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = GlassWhite),
-                                    shape = RoundedCornerShape(8.dp),
-                                    border = BorderStroke(1.dp, CyberBlue),
-                                    modifier = Modifier.fillMaxWidth()
+                            Text(
+                                text = "LOCK TARGET:",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = LightOnBackground.copy(alpha = 0.6f),
+                                letterSpacing = 1.5.sp
+                            )
+                            otherPlayers.forEach { opponent ->
+                                val isSelected = opponent.id == activeTargetId
+                                val badgeColor = if (isSelected) CyberRed else Color.Transparent
+                                val textColor = if (isSelected) Color.White else LightOnBackground.copy(alpha = 0.8f)
+                                val borderStroke = if (isSelected) BorderStroke(1.dp, CyberRed) else BorderStroke(1.dp, GlassWhite)
+
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(badgeColor)
+                                        .border(borderStroke, RoundedCornerShape(6.dp))
+                                        .clickable { activeTargetId = opponent.id }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp)
                                 ) {
                                     Text(
-                                        text = target.name.uppercase(),
+                                        text = opponent.name.uppercase(),
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.White
+                                        color = textColor
                                     )
                                 }
                             }
                         }
+                    } else if (otherPlayers.size == 1) {
+                        // Single opponent locked automatically
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .background(SurfaceGray.copy(alpha = 0.85f), RoundedCornerShape(12.dp))
+                                .border(BorderStroke(1.dp, GlassWhite), RoundedCornerShape(12.dp))
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                text = "LOCKED TARGET: ",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = LightOnBackground.copy(alpha = 0.6f),
+                                letterSpacing = 1.5.sp
+                            )
+                            Text(
+                                text = otherPlayers.first().name.uppercase(),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = CyberRed,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
                     }
 
-                    TextButton(
-                        onClick = { showTargetSelector = false },
-                        colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+                    // FIRE trigger
+                    Button(
+                        onClick = {
+                            onShootTriggered()
+                            if (isTargetInCrosshair) {
+                                activeTargetId?.let { targetId ->
+                                    onConfirmHit(targetId)
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberRed),
+                        shape = CircleShape,
+                        modifier = Modifier
+                            .size(80.dp)
+                            .border(BorderStroke(2.dp, Color.White), CircleShape),
+                        contentPadding = PaddingValues(0.dp)
                     ) {
-                        Text("CANCEL", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "FIRE",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 14.sp,
+                            color = Color.White,
+                            letterSpacing = 1.sp
+                        )
                     }
                 }
             }

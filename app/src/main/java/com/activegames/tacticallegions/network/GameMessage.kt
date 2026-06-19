@@ -1,4 +1,4 @@
-package com.example.tacticallegions.network
+package com.activegames.tacticallegions.network
 
 import kotlinx.serialization.Serializable
 
@@ -24,7 +24,13 @@ sealed class GameMessage {
     data class Join(val nickname: String, val playerId: String) : GameMessage()
 
     @Serializable
-    data class LobbyUpdate(val players: List<PlayerState>) : GameMessage()
+    data class LobbyUpdate(
+        val players: List<PlayerState>,
+        val matchDurationSeconds: Int = 600
+    ) : GameMessage()
+
+    @Serializable
+    data class ConfigureMatch(val durationSeconds: Int) : GameMessage()
 
     @Serializable
     data class ToggleReady(val playerId: String, val isReady: Boolean) : GameMessage()

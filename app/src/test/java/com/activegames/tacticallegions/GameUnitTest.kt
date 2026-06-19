@@ -1,7 +1,7 @@
-package com.example.tacticallegions
+package com.activegames.tacticallegions
 
-import com.example.tacticallegions.network.GameMessage
-import com.example.tacticallegions.network.PlayerState
+import com.activegames.tacticallegions.network.GameMessage
+import com.activegames.tacticallegions.network.PlayerState
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

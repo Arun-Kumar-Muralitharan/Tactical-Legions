@@ -1,13 +1,14 @@
-package com.example.tacticallegions.ui
+package com.activegames.tacticallegions.ui
 
 import android.app.Application
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.tacticallegions.network.ConnectionState
-import com.example.tacticallegions.network.GameClient
-import com.example.tacticallegions.network.GameServer
-import com.example.tacticallegions.util.SoundHapticHelper
+import com.activegames.tacticallegions.network.ConnectionState
+import com.activegames.tacticallegions.network.GameClient
+import com.activegames.tacticallegions.network.GameServer
+import com.activegames.tacticallegions.network.PlayerScore
+import com.activegames.tacticallegions.util.SoundHapticHelper
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -26,6 +27,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     var successfulHitCount = mutableStateOf(0)
+        private set
+
+    var abortedScores = mutableStateOf<List<PlayerScore>?>(null)
         private set
 
     private var lastLockStatus = false
@@ -99,6 +103,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         client.toggleReady(ready)
     }
 
+    fun configureMatch(durationSeconds: Int) {
+        client.configureMatch(durationSeconds)
+    }
+
     fun setTargetStatus(inCrosshair: Boolean) {
         if (inCrosshair != lastLockStatus) {
             lastLockStatus = inCrosshair
@@ -127,6 +135,18 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         server = null
         isHost.value = false
         localIp.value = "127.0.0.1"
+    }
+
+    fun abortGame() {
+        val currentPlayers = client.players.value
+        val scores = currentPlayers.map { PlayerScore(name = it.name, score = it.score) }
+            .sortedByDescending { it.score }
+        abortedScores.value = scores
+        disconnect()
+    }
+
+    fun clearAbortedScores() {
+        abortedScores.value = null
     }
 
     override fun onCleared() {
