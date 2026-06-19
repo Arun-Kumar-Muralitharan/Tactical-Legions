@@ -100,9 +100,21 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         client.toggleReady(ready)
     }
 
-    fun configureMatch(durationSeconds: Int) {
-        client.configureMatch(durationSeconds)
+    fun configureMatch(durationSeconds: Int, gameMode: com.activegames.tacticallegions.network.GameMode, scoreLimit: Int) {
+        client.configureMatch(durationSeconds, gameMode, scoreLimit)
     }
+
+    fun chooseTeam(team: String) {
+        client.chooseTeam(team)
+    }
+
+    fun randomizeTeams() {
+        client.randomizeTeams()
+    }
+
+    // fun addMockPlayers() {
+    //     client.addMockPlayers()
+    // }
 
     fun setTargetStatus(inCrosshair: Boolean) {
         if (inCrosshair != lastLockStatus) {

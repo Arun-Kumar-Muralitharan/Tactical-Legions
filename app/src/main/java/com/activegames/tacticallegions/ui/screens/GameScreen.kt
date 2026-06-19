@@ -7,6 +7,7 @@ import android.view.WindowManager
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.activity.compose.BackHandler
+import com.activegames.tacticallegions.network.GameMode
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.*
@@ -49,6 +50,8 @@ fun GameScreen(
     countdownTime: Int?,
     isTargetInCrosshair: Boolean,
     successfulHitCount: Int,
+    gameMode: GameMode,
+    scoreLimit: Int,
     onTargetStatusChanged: (Boolean) -> Unit,
     onShootTriggered: () -> Unit,
     onConfirmHit: (String) -> Unit,
@@ -75,8 +78,15 @@ fun GameScreen(
         }
     }
 
+    val localTeam = localPlayer?.team ?: ""
+    val isTeamPlayActive = players.size > 4 && localTeam.isNotBlank()
+
     // Lock-on targeting state
-    val otherPlayers = remember(players) { players.filter { it.id != localPlayerId && it.isAlive } }
+    val otherPlayers = remember(players, localTeam) {
+        players.filter { opponent ->
+            opponent.id != localPlayerId && (!isTeamPlayActive || opponent.team != localTeam)
+        }
+    }
     var activeTargetId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(otherPlayers) {
@@ -273,14 +283,32 @@ fun GameScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (isTeamPlayActive) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SurfaceGray.copy(alpha = 0.7f)),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, if (localTeam == "RED") CyberRed else CyberBlue)
+                        ) {
+                            Text(
+                                text = localTeam,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (localTeam == "RED") CyberRed else CyberBlue,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                letterSpacing = 1.sp
+                            )
+                        }
+                    }
+
                     // Score HUD
                     Card(
                         colors = CardDefaults.cardColors(containerColor = SurfaceGray.copy(alpha = 0.7f)),
                         shape = RoundedCornerShape(8.dp),
                         border = BorderStroke(1.dp, GlassWhite)
                     ) {
+                        val scoreText = if (gameMode == GameMode.RACE) "SCORE: $score/$scoreLimit" else "SCORE: $score"
                         Text(
-                            text = "SCORE: $score",
+                            text = scoreText,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = CyberGreen,
@@ -420,52 +448,25 @@ fun GameScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     // Pre-selection Lock-on Target HUD
-                    if (otherPlayers.size > 1) {
+                    if (otherPlayers.isNotEmpty()) {
+                        val currentTarget = otherPlayers.find { it.id == activeTargetId } ?: otherPlayers.firstOrNull()
+                        val isTargetAlive = currentTarget?.isAlive ?: true
+                        val targetName = currentTarget?.name?.uppercase() ?: "NONE"
+                        val displayTargetName = if (isTargetAlive) targetName else "$targetName [DEAD]"
+                        val targetColor = if (isTargetAlive) CyberRed else Color.Gray
+                        
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .background(SurfaceGray.copy(alpha = 0.85f), RoundedCornerShape(12.dp))
                                 .border(BorderStroke(1.dp, GlassWhite), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 14.dp, vertical = 8.dp)
-                        ) {
-                            Text(
-                                text = "LOCK TARGET:",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = LightOnBackground.copy(alpha = 0.6f),
-                                letterSpacing = 1.5.sp
-                            )
-                            otherPlayers.forEach { opponent ->
-                                val isSelected = opponent.id == activeTargetId
-                                val badgeColor = if (isSelected) CyberRed else Color.Transparent
-                                val textColor = if (isSelected) Color.White else LightOnBackground.copy(alpha = 0.8f)
-                                val borderStroke = if (isSelected) BorderStroke(1.dp, CyberRed) else BorderStroke(1.dp, GlassWhite)
-
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(badgeColor)
-                                        .border(borderStroke, RoundedCornerShape(6.dp))
-                                        .clickable { activeTargetId = opponent.id }
-                                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                                ) {
-                                    Text(
-                                        text = opponent.name.uppercase(),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = textColor
-                                    )
+                                .clickable(enabled = otherPlayers.size > 1) {
+                                    val currentIndex = otherPlayers.indexOfFirst { it.id == activeTargetId }
+                                    if (currentIndex != -1) {
+                                        val nextIndex = (currentIndex + 1) % otherPlayers.size
+                                        activeTargetId = otherPlayers[nextIndex].id
+                                    }
                                 }
-                            }
-                        }
-                    } else if (otherPlayers.size == 1) {
-                        // Single opponent locked automatically
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .background(SurfaceGray.copy(alpha = 0.85f), RoundedCornerShape(12.dp))
-                                .border(BorderStroke(1.dp, GlassWhite), RoundedCornerShape(12.dp))
                                 .padding(horizontal = 14.dp, vertical = 8.dp)
                         ) {
                             Text(
@@ -476,12 +477,22 @@ fun GameScreen(
                                 letterSpacing = 1.5.sp
                             )
                             Text(
-                                text = otherPlayers.first().name.uppercase(),
+                                text = displayTargetName,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = CyberRed,
+                                color = targetColor,
                                 letterSpacing = 0.5.sp
                             )
+                            if (otherPlayers.size > 1) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "(TAP TO CYCLE)",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = CyberBlue,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
                         }
                     }
 

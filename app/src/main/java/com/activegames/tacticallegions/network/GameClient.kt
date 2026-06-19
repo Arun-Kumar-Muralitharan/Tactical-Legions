@@ -57,6 +57,12 @@ class GameClient {
     private val _matchDurationSeconds = MutableStateFlow(600)
     val matchDurationSeconds = _matchDurationSeconds.asStateFlow()
 
+    private val _gameMode = MutableStateFlow(GameMode.CLASSIC)
+    val gameMode = _gameMode.asStateFlow()
+
+    private val _scoreLimit = MutableStateFlow(10)
+    val scoreLimit = _scoreLimit.asStateFlow()
+
     // Real-time events for triggers (sounds/vibrations)
     private val _hitEvent = MutableSharedFlow<Triple<String, String, Int>>() // targetId, shooterId, currentHealth
     val hitEvent = _hitEvent.asSharedFlow()
@@ -97,7 +103,9 @@ class GameClient {
                 e.printStackTrace()
                 _connectionState.value = ConnectionState.Failed(e.localizedMessage ?: "Unknown Error")
             } finally {
-                disconnect()
+                if (_connectionState.value != ConnectionState.Disconnected) {
+                    disconnect()
+                }
             }
         }
     }
@@ -109,10 +117,14 @@ class GameClient {
                 is GameMessage.LobbyUpdate -> {
                     _players.value = message.players
                     _matchDurationSeconds.value = message.matchDurationSeconds
+                    _gameMode.value = message.gameMode
+                    _scoreLimit.value = message.scoreLimit
                 }
                 is GameMessage.StartGame -> {
                     _isGameActive.value = true
                     _countdownTime.value = message.countdownSeconds
+                    _gameMode.value = message.gameMode
+                    _scoreLimit.value = message.scoreLimit
                     if (message.countdownSeconds == 0) {
                         _countdownTime.value = null // clear countdown overlay
                     }
@@ -157,9 +169,9 @@ class GameClient {
         }
     }
 
-    fun configureMatch(durationSeconds: Int) {
+    fun configureMatch(durationSeconds: Int, gameMode: GameMode, scoreLimit: Int) {
         clientScope.launch {
-            sendMessage(GameMessage.ConfigureMatch(durationSeconds))
+            sendMessage(GameMessage.ConfigureMatch(durationSeconds, gameMode, scoreLimit))
         }
     }
 
@@ -168,6 +180,24 @@ class GameClient {
             sendMessage(GameMessage.ActionShoot(playerId, targetId))
         }
     }
+
+    fun chooseTeam(team: String) {
+        clientScope.launch {
+            sendMessage(GameMessage.ChooseTeam(playerId, team))
+        }
+    }
+
+    fun randomizeTeams() {
+        clientScope.launch {
+            sendMessage(GameMessage.RandomizeTeams)
+        }
+    }
+
+    // fun addMockPlayers() {
+    //     clientScope.launch {
+    //         sendMessage(GameMessage.AddMockPlayers)
+    //     }
+    // }
 
     private suspend fun sendMessage(message: GameMessage) {
         val sessionRef = session
@@ -187,13 +217,15 @@ class GameClient {
 
         _isGameActive.value = false
         _matchDurationSeconds.value = 600
+        _gameMode.value = GameMode.CLASSIC
+        _scoreLimit.value = 10
         _connectionState.value = ConnectionState.Disconnected
         _players.value = emptyList()
         _countdownTime.value = null
         _matchTimeRemaining.value = null
         
         if (wasGameActive && currentPlayers.isNotEmpty()) {
-            _finalScores.value = currentPlayers.map { PlayerScore(name = it.name, score = it.score) }
+            _finalScores.value = currentPlayers.map { PlayerScore(name = it.name, score = it.score, team = it.team) }
                 .sortedByDescending { it.score }
         } else {
             _finalScores.value = null
