@@ -1,5 +1,9 @@
 package com.example.tacticallegions.ui.screens
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.view.WindowManager
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -21,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +47,7 @@ fun GameScreen(
     matchTimeSeconds: Int?,
     countdownTime: Int?,
     isTargetInCrosshair: Boolean,
+    successfulHitCount: Int,
     onTargetStatusChanged: (Boolean) -> Unit,
     onShootTriggered: () -> Unit,
     onConfirmHit: (String) -> Unit,
@@ -60,8 +66,35 @@ fun GameScreen(
     var showTargetSelector by remember { mutableStateOf(false) }
     var showExitConfirmation by remember { mutableStateOf(false) }
 
-    DisposableEffect(Unit) {
+    // Hit flashing effect state
+    var lastHealth by remember { mutableStateOf(health) }
+    val hitFlashAlpha = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(health) {
+        if (health < lastHealth && health > 0) {
+            hitFlashAlpha.snapTo(0.6f)
+            hitFlashAlpha.animateTo(
+                targetValue = 0f,
+                animationSpec = androidx.compose.animation.core.tween(durationMillis = 500)
+            )
+        }
+        lastHealth = health
+    }
+
+    // Blood splash effect state
+    var lastSuccessfulHitCount by remember { mutableStateOf(successfulHitCount) }
+    var triggerBloodSplash by remember { mutableStateOf(0) }
+    LaunchedEffect(successfulHitCount) {
+        if (successfulHitCount > lastSuccessfulHitCount) {
+            triggerBloodSplash += 1
+        }
+        lastSuccessfulHitCount = successfulHitCount
+    }
+
+    DisposableEffect(context) {
+        val activity = context.findActivity()
+        activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             cameraExecutor.shutdown()
         }
     }
@@ -108,11 +141,45 @@ fun GameScreen(
                 modifier = Modifier.fillMaxSize()
             )
         } else {
-            // Static dark red screen when dead
+            // Static red screen when dead with "Wait until Respawn" text
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(CyberRed.copy(alpha = 0.2f))
+                    .background(Color(0xFF8B0000)), // Dark Red
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Wait until Respawn",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White,
+                        letterSpacing = 2.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        modifier = Modifier.size(48.dp)
+                    )
+                }
+            }
+        }
+
+        // Render blood splash effect (for hitting opponent)
+        BloodSplashEffect(
+            triggerCount = triggerBloodSplash,
+            onAnimationFinished = {}
+        )
+
+        // Render hit flash (for taking damage)
+        if (hitFlashAlpha.value > 0f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Red.copy(alpha = hitFlashAlpha.value))
             )
         }
 
@@ -392,45 +459,7 @@ fun GameScreen(
             }
         }
 
-        // Full Screen Respawn / Elimination Overlay
-        AnimatedVisibility(
-            visible = !isAlive,
-            enter = fadeIn(),
-            exit = fadeOut()
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(DarkOverlay),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "YOU WERE ELIMINATED",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Black,
-                        color = CyberRed,
-                        letterSpacing = 4.sp
-                    )
-
-                    Text(
-                        text = "RESPAWNING IN COOLDOWN",
-                        fontSize = 12.sp,
-                        color = LightOnBackground.copy(alpha = 0.5f),
-                        letterSpacing = 2.sp
-                    )
-
-                    // Displays simple progress circle for wait
-                    CircularProgressIndicator(
-                        color = CyberRed,
-                        modifier = Modifier.size(64.dp)
-                    )
-                }
-            }
-        }
+        // The old full screen overlay has been removed to display "Wait until Respawn" directly over the view bounds.
     }
 }
 
@@ -499,4 +528,119 @@ private fun formatTime(seconds: Int): String {
     val mins = seconds / 60
     val secs = seconds % 60
     return String.format("%02d:%02d", mins, secs)
+}
+
+data class BloodSplatter(
+    val id: Int,
+    val xPercent: Float,
+    val yPercent: Float,
+    val maxRadius: Float,
+    val rotation: Float
+)
+
+@Composable
+fun BloodSplashEffect(
+    triggerCount: Int,
+    onAnimationFinished: () -> Unit
+) {
+    var splatters by remember { mutableStateOf<List<BloodSplatter>>(emptyList()) }
+    val animProgress = remember { androidx.compose.animation.core.Animatable(0f) }
+
+    LaunchedEffect(triggerCount) {
+        if (triggerCount > 0) {
+            val random = java.util.Random()
+            splatters = List(6) { id ->
+                BloodSplatter(
+                    id = id,
+                    xPercent = 0.2f + random.nextFloat() * 0.6f,
+                    yPercent = 0.2f + random.nextFloat() * 0.6f,
+                    maxRadius = 40f + random.nextFloat() * 80f,
+                    rotation = random.nextFloat() * 360f
+                )
+            }
+            animProgress.snapTo(0f)
+            animProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = androidx.compose.animation.core.tween(
+                    durationMillis = 600,
+                    easing = androidx.compose.animation.core.FastOutSlowInEasing
+                )
+            )
+            onAnimationFinished()
+        }
+    }
+
+    if (animProgress.value > 0f && animProgress.value < 1f) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val width = constraints.maxWidth.toFloat()
+            val height = constraints.maxHeight.toFloat()
+
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                splatters.forEach { splatter ->
+                    val x = splatter.xPercent * width
+                    val y = splatter.yPercent * height
+                    
+                    val scale = if (animProgress.value < 0.15f) {
+                        animProgress.value / 0.15f
+                    } else {
+                        1f
+                    }
+                    val alpha = 1f - animProgress.value
+                    val currentRadius = splatter.maxRadius * scale
+                    val dripY = y + (animProgress.value * 25.dp.toPx())
+
+                    // Draw main splatter center
+                    drawCircle(
+                        color = Color(0xFFB30000).copy(alpha = alpha),
+                        radius = currentRadius,
+                        center = Offset(x, dripY)
+                    )
+
+                    // Draw satellite droplets
+                    val satelliteCount = 5
+                    for (i in 0 until satelliteCount) {
+                        val angle = (splatter.rotation + i * (360 / satelliteCount)) * Math.PI / 180
+                        val distance = currentRadius * 1.4f * animProgress.value
+                        val sx = x + (Math.cos(angle) * distance).toFloat()
+                        val sy = dripY + (Math.sin(angle) * distance).toFloat()
+                        drawCircle(
+                            color = Color(0xFF8B0000).copy(alpha = alpha),
+                            radius = currentRadius * 0.25f,
+                            center = Offset(sx, sy)
+                        )
+                    }
+                }
+            }
+
+            val textAlpha = 1f - animProgress.value
+            val textScale = 0.8f + animProgress.value * 0.5f
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "HIT!",
+                    color = CyberGreen,
+                    fontSize = 36.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 4.sp,
+                    modifier = Modifier
+                        .graphicsLayer(
+                            scaleX = textScale,
+                            scaleY = textScale,
+                            alpha = textAlpha
+                        )
+                )
+            }
+        }
+    }
+}
+
+private fun Context.findActivity(): Activity? {
+    var context = this
+    while (context is ContextWrapper) {
+        if (context is Activity) return context
+        context = context.baseContext
+    }
+    return null
 }
