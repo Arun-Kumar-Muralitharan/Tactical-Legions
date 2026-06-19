@@ -29,9 +29,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     var successfulHitCount = mutableStateOf(0)
         private set
 
-    var abortedScores = mutableStateOf<List<PlayerScore>?>(null)
-        private set
-
     private var lastLockStatus = false
 
     init {
@@ -135,18 +132,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         server = null
         isHost.value = false
         localIp.value = "127.0.0.1"
-    }
-
-    fun abortGame() {
-        val currentPlayers = client.players.value
-        val scores = currentPlayers.map { PlayerScore(name = it.name, score = it.score) }
-            .sortedByDescending { it.score }
-        abortedScores.value = scores
-        disconnect()
-    }
-
-    fun clearAbortedScores() {
-        abortedScores.value = null
     }
 
     override fun onCleared() {

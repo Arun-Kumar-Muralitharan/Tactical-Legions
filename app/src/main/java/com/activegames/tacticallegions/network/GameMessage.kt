@@ -9,7 +9,8 @@ data class PlayerState(
     val isReady: Boolean,
     val isAlive: Boolean,
     val health: Int,
-    val score: Int
+    val score: Int,
+    val isExited: Boolean = false
 )
 
 @Serializable
