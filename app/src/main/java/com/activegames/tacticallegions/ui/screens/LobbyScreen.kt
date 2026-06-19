@@ -1,4 +1,4 @@
-package com.example.tacticallegions.ui.screens
+package com.activegames.tacticallegions.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
@@ -19,8 +19,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.tacticallegions.network.PlayerState
-import com.example.tacticallegions.theme.*
+import com.activegames.tacticallegions.network.PlayerState
+import com.activegames.tacticallegions.theme.*
 
 @Composable
 fun LobbyScreen(
@@ -29,6 +29,8 @@ fun LobbyScreen(
     isHost: Boolean,
     hostIp: String,
     countdownTime: Int?,
+    matchDurationSeconds: Int,
+    onDurationChanged: (Int) -> Unit,
     onReadyToggled: (Boolean) -> Unit,
     onDisconnectClicked: () -> Unit
 ) {
@@ -122,6 +124,84 @@ fun LobbyScreen(
                         fontSize = 12.sp,
                         color = LightOnBackground
                     )
+                }
+            }
+
+            // Match Timer Configuration
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(BorderStroke(1.dp, GlassWhite), RoundedCornerShape(12.dp)),
+                colors = CardDefaults.cardColors(containerColor = SurfaceGray.copy(alpha = 0.5f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "MATCH DURATION LIMIT",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = LightOnBackground.copy(alpha = 0.5f),
+                        letterSpacing = 1.5.sp
+                    )
+
+                    val durationMinutes = matchDurationSeconds / 60
+
+                    if (isHost) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    if (durationMinutes > 1) {
+                                        onDurationChanged((durationMinutes - 1) * 60)
+                                    }
+                                },
+                                colors = IconButtonDefaults.iconButtonColors(containerColor = GlassWhite),
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Text("-", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 18.sp)
+                            }
+
+                            Text(
+                                text = "$durationMinutes MINS",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Black,
+                                color = CyberGreen,
+                                letterSpacing = 0.5.sp
+                            )
+
+                            IconButton(
+                                onClick = {
+                                    if (durationMinutes < 20) {
+                                        onDurationChanged((durationMinutes + 1) * 60)
+                                    }
+                                },
+                                colors = IconButtonDefaults.iconButtonColors(containerColor = GlassWhite),
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Text("+", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 18.sp)
+                            }
+                        }
+                        Text(
+                            text = "Max limit: 20 minutes",
+                            fontSize = 10.sp,
+                            color = LightOnBackground.copy(alpha = 0.4f)
+                        )
+                    } else {
+                        Text(
+                            text = "$durationMinutes MINS (SET BY HOST)",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CyberBlue,
+                            letterSpacing = 0.5.sp,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                    }
                 }
             }
 

@@ -1,4 +1,4 @@
-package com.example.tacticallegions.ui.screens
+package com.activegames.tacticallegions.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -19,7 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.tacticallegions.theme.*
+import com.activegames.tacticallegions.theme.*
 
 @Composable
 fun SetupScreen(

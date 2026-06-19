@@ -1,4 +1,4 @@
-package com.example.tacticallegions
+package com.activegames.tacticallegions
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -21,10 +21,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.tacticallegions.network.ConnectionState
-import com.example.tacticallegions.theme.*
-import com.example.tacticallegions.ui.GameViewModel
-import com.example.tacticallegions.ui.screens.*
+import com.activegames.tacticallegions.network.ConnectionState
+import com.activegames.tacticallegions.theme.*
+import com.activegames.tacticallegions.ui.GameViewModel
+import com.activegames.tacticallegions.ui.screens.*
 
 class MainActivity : ComponentActivity() {
 
@@ -65,10 +65,13 @@ fun TacticalAppContent(
     val countdownTime by viewModel.client.countdownTime.collectAsState()
     val matchTimeSeconds by viewModel.client.matchTimeRemaining.collectAsState()
     val finalScores by viewModel.client.finalScores.collectAsState()
+    val isGameActive by viewModel.client.isGameActive.collectAsState()
+    val matchDurationSeconds by viewModel.client.matchDurationSeconds.collectAsState()
 
     val localIp by viewModel.localIp
     val isHost by viewModel.isHost
     val isTargetInCrosshair by viewModel.isTargetInCrosshair
+    val abortedScores by viewModel.abortedScores
 
     val context = LocalContext.current
     var hasCameraPermission by remember {
@@ -91,15 +94,25 @@ fun TacticalAppContent(
     }
 
     when {
+        abortedScores != null -> {
+            ScoreScreen(
+                scores = abortedScores!!,
+                title = "MISSION ABORTED",
+                onReturnClicked = {
+                    viewModel.clearAbortedScores()
+                }
+            )
+        }
         finalScores != null -> {
             ScoreScreen(
                 scores = finalScores!!,
+                title = "ROUND OVER",
                 onReturnClicked = {
                     viewModel.disconnect()
                 }
             )
         }
-        matchTimeSeconds != null || countdownTime != null -> {
+        isGameActive -> {
             val successfulHitCount by viewModel.successfulHitCount
             GameScreen(
                 players = players,
@@ -118,7 +131,7 @@ fun TacticalAppContent(
                     viewModel.confirmHit(targetId)
                 },
                 onExitClicked = {
-                    viewModel.disconnect()
+                    viewModel.abortGame()
                 }
             )
         }
@@ -130,6 +143,10 @@ fun TacticalAppContent(
                 isHost = isHost,
                 hostIp = displayIp,
                 countdownTime = countdownTime,
+                matchDurationSeconds = matchDurationSeconds,
+                onDurationChanged = { seconds ->
+                    viewModel.configureMatch(seconds)
+                },
                 onReadyToggled = { ready ->
                     viewModel.toggleReady(ready)
                 },

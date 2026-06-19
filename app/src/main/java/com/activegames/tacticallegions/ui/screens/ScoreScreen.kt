@@ -1,4 +1,4 @@
-package com.example.tacticallegions.ui.screens
+package com.activegames.tacticallegions.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -18,12 +18,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.tacticallegions.network.PlayerScore
-import com.example.tacticallegions.theme.*
+import com.activegames.tacticallegions.network.PlayerScore
+import com.activegames.tacticallegions.theme.*
 
 @Composable
 fun ScoreScreen(
     scores: List<PlayerScore>,
+    title: String = "ROUND OVER",
     onReturnClicked: () -> Unit
 ) {
     Box(
@@ -63,7 +64,7 @@ fun ScoreScreen(
                     letterSpacing = 3.sp
                 )
                 Text(
-                    text = "ROUND OVER",
+                    text = title,
                     fontSize = 32.sp,
                     fontWeight = FontWeight.Black,
                     color = CyberRed,

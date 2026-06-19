@@ -1,4 +1,4 @@
-package com.example.tacticallegions.theme
+package com.activegames.tacticallegions.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle

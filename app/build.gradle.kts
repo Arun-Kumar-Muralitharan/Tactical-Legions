@@ -5,10 +5,10 @@ plugins {
 }
 
 android {
-    namespace = "com.example.tacticallegions"
+    namespace = "com.activegames.tacticallegions"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.example.tacticallegions"
+        applicationId = "com.activegames.tacticallegions"
         minSdk = 24
         targetSdk = 36
         versionCode = 1

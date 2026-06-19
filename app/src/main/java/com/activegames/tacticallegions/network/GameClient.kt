@@ -1,4 +1,4 @@
-package com.example.tacticallegions.network
+package com.activegames.tacticallegions.network
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -51,6 +51,12 @@ class GameClient {
     private val _finalScores = MutableStateFlow<List<PlayerScore>?>(null)
     val finalScores = _finalScores.asStateFlow()
 
+    private val _isGameActive = MutableStateFlow(false)
+    val isGameActive = _isGameActive.asStateFlow()
+
+    private val _matchDurationSeconds = MutableStateFlow(600)
+    val matchDurationSeconds = _matchDurationSeconds.asStateFlow()
+
     // Real-time events for triggers (sounds/vibrations)
     private val _hitEvent = MutableSharedFlow<Triple<String, String, Int>>() // targetId, shooterId, currentHealth
     val hitEvent = _hitEvent.asSharedFlow()
@@ -102,8 +108,10 @@ class GameClient {
             when (message) {
                 is GameMessage.LobbyUpdate -> {
                     _players.value = message.players
+                    _matchDurationSeconds.value = message.matchDurationSeconds
                 }
                 is GameMessage.StartGame -> {
+                    _isGameActive.value = true
                     _countdownTime.value = message.countdownSeconds
                     if (message.countdownSeconds == 0) {
                         _countdownTime.value = null // clear countdown overlay
@@ -134,6 +142,7 @@ class GameClient {
                 is GameMessage.GameOver -> {
                     _finalScores.value = message.finalScores
                     _matchTimeRemaining.value = null
+                    _isGameActive.value = false
                 }
                 else -> { /* Heartbeats, etc */ }
             }
@@ -145,6 +154,12 @@ class GameClient {
     fun toggleReady(ready: Boolean) {
         clientScope.launch {
             sendMessage(GameMessage.ToggleReady(playerId, ready))
+        }
+    }
+
+    fun configureMatch(durationSeconds: Int) {
+        clientScope.launch {
+            sendMessage(GameMessage.ConfigureMatch(durationSeconds))
         }
     }
 
@@ -167,6 +182,8 @@ class GameClient {
     }
 
     fun disconnect() {
+        _isGameActive.value = false
+        _matchDurationSeconds.value = 600
         _connectionState.value = ConnectionState.Disconnected
         _players.value = emptyList()
         _countdownTime.value = null
