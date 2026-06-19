@@ -40,6 +40,8 @@ class GameServer {
     private var gameStarted = false
     private var matchTimeRemaining = 600
     private var customMatchDurationSeconds = 600
+    private var customGameMode = GameMode.CLASSIC
+    private var customScoreLimit = 10
 
     fun start(port: Int = 8080) {
         if (serverJob != null) return // Already running
@@ -76,21 +78,54 @@ class GameServer {
                                                 )
                                                 _playersState[message.playerId] = player
                                                 
-                                                broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds))
+                                                broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds, customGameMode, customScoreLimit))
                                             }
                                             is GameMessage.ToggleReady -> {
                                                 val pId = message.playerId
                                                 val existing = _playersState[pId]
                                                 if (existing != null) {
                                                     _playersState[pId] = existing.copy(isReady = message.isReady)
-                                                    broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds))
+                                                    broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds, customGameMode, customScoreLimit))
                                                     checkLobbyReadyAndStart()
                                                 }
                                             }
                                             is GameMessage.ConfigureMatch -> {
                                                 customMatchDurationSeconds = message.durationSeconds
-                                                broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds))
+                                                customGameMode = message.gameMode
+                                                customScoreLimit = message.scoreLimit
+                                                broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds, customGameMode, customScoreLimit))
                                             }
+                                            is GameMessage.ChooseTeam -> {
+                                                val pId = message.playerId
+                                                val existing = _playersState[pId]
+                                                if (existing != null && !gameStarted) {
+                                                    _playersState[pId] = existing.copy(team = message.team)
+                                                    broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds, customGameMode, customScoreLimit))
+                                                }
+                                            }
+                                            is GameMessage.RandomizeTeams -> {
+                                                if (!gameStarted) {
+                                                    randomizeTeamsEvenly()
+                                                }
+                                            }
+                                            // is GameMessage.AddMockPlayers -> {
+                                            //     if (!gameStarted) {
+                                            //         val mockNames = listOf("Alpha", "Bravo", "Charlie", "Delta", "Echo")
+                                            //         mockNames.forEach { name ->
+                                            //             val pId = java.util.UUID.randomUUID().toString()
+                                            //             _playersState[pId] = PlayerState(
+                                            //                 id = pId,
+                                            //                 name = name,
+                                            //                 isReady = true,
+                                            //                 isAlive = true,
+                                            //                 health = 100,
+                                            //                 score = 0,
+                                            //                 team = ""
+                                            //             )
+                                            //         }
+                                            //         broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds, customGameMode, customScoreLimit))
+                                            //     }
+                                            // }
                                             is GameMessage.ActionShoot -> {
                                                 handleShootAction(message.shooterId, message.targetId)
                                             }
@@ -113,7 +148,7 @@ class GameServer {
                                         // Lobby stage: completely remove them so they don't linger if they disconnect before starting
                                         _playersState.remove(pId)
                                     }
-                                    broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds))
+                                    broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds, customGameMode, customScoreLimit))
                                 }
                             }
                         }
@@ -144,11 +179,52 @@ class GameServer {
         
         // Start the game if all players are ready, with at least 1 player (for solo testing/debug)
         if (currentPlayers.isNotEmpty() && currentPlayers.all { it.isReady } && currentPlayers.size <= 8) {
+            // Apply team balancing / assignment before game loop starts
+            if (currentPlayers.size > 4) {
+                val redChose = currentPlayers.filter { it.team == "RED" }.toMutableList()
+                val blueChose = currentPlayers.filter { it.team == "BLUE" }.toMutableList()
+                val unassigned = currentPlayers.filter { it.team != "RED" && it.team != "BLUE" }.shuffled().toMutableList()
+
+                val redFinal = redChose
+                val blueFinal = blueChose
+
+                // 1. Distribute unassigned players to the smaller team first
+                for (player in unassigned) {
+                    if (redFinal.size <= blueFinal.size) {
+                        redFinal.add(player)
+                    } else {
+                        blueFinal.add(player)
+                    }
+                }
+
+                // 2. If teams are still uneven (difference > 1), balance them
+                val total = currentPlayers.size
+                val maxAllowedDiff = if (total % 2 == 0) 0 else 1
+                
+                while (Math.abs(redFinal.size - blueFinal.size) > maxAllowedDiff) {
+                    if (redFinal.size > blueFinal.size) {
+                        val p = redFinal.removeAt(redFinal.size - 1)
+                        blueFinal.add(p)
+                    } else {
+                        val p = blueFinal.removeAt(blueFinal.size - 1)
+                        redFinal.add(p)
+                    }
+                }
+
+                // Save back to players state
+                redFinal.forEach { _playersState[it.id] = it.copy(team = "RED") }
+                blueFinal.forEach { _playersState[it.id] = it.copy(team = "BLUE") }
+            } else {
+                currentPlayers.forEach { player ->
+                    _playersState[player.id] = player.copy(team = "")
+                }
+            }
+
             gameStarted = true
             gameLoopJob = serverScope.launch {
                 // Phase 1: 5s Countdown
                 for (i in 5 downTo 0) {
-                    broadcast(GameMessage.StartGame(countdownSeconds = i, durationSeconds = customMatchDurationSeconds))
+                    broadcast(GameMessage.StartGame(countdownSeconds = i, durationSeconds = customMatchDurationSeconds, gameMode = customGameMode, scoreLimit = customScoreLimit))
                     delay(1000)
                 }
                 
@@ -157,22 +233,19 @@ class GameServer {
                     val p = _playersState[pId]!!
                     _playersState[pId] = p.copy(health = 100, isAlive = true, score = 0, isExited = false)
                 }
-                broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds))
+                broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds, customGameMode, customScoreLimit))
 
                 // Phase 2: In-Game custom timer
                 matchTimeRemaining = customMatchDurationSeconds
-                while (matchTimeRemaining > 0) {
+                while (matchTimeRemaining > 0 && gameStarted) {
                     broadcast(GameMessage.MatchTimerTick(matchTimeRemaining))
                     delay(1000)
                     matchTimeRemaining--
                 }
 
-                // Phase 3: Game Over
-                val scoreboard = _playersState.values
-                    .map { PlayerScore(name = it.name, score = it.score) }
-                    .sortedByDescending { it.score }
-                broadcast(GameMessage.GameOver(scoreboard))
-                gameStarted = false
+                if (gameStarted) {
+                    endGame()
+                }
             }
         }
     }
@@ -196,23 +269,59 @@ class GameServer {
         } else {
             // Player eliminated
             _playersState[targetId] = target.copy(health = 0, isAlive = false)
-            _playersState[shooterId] = shooter.copy(score = shooter.score + 1)
+            val newScore = shooter.score + 1
+            _playersState[shooterId] = shooter.copy(score = newScore)
             
             // Broadcast elimination
             broadcast(GameMessage.PlayerEliminated(targetId = targetId, shooterId = shooterId, respawnSeconds = 5))
-            broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds))
+            broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds, customGameMode, customScoreLimit))
 
-            // Trigger respawn in 5 seconds
-            serverScope.launch {
-                delay(5000)
-                val currentTarget = _playersState[targetId]
-                if (currentTarget != null) {
-                    _playersState[targetId] = currentTarget.copy(health = 100, isAlive = true)
-                    broadcast(GameMessage.Respawned(targetId))
-                    broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds))
+            if (customGameMode == GameMode.RACE && newScore >= customScoreLimit) {
+                endGame()
+            } else {
+                // Trigger respawn in 5 seconds
+                serverScope.launch {
+                    delay(5000)
+                    val currentTarget = _playersState[targetId]
+                    if (currentTarget != null && gameStarted) {
+                        _playersState[targetId] = currentTarget.copy(health = 100, isAlive = true)
+                        broadcast(GameMessage.Respawned(targetId))
+                        broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds, customGameMode, customScoreLimit))
+                    }
                 }
             }
         }
+    }
+
+    private fun endGame() {
+        if (!gameStarted) return
+        gameStarted = false
+        gameLoopJob?.cancel()
+        gameLoopJob = null
+        
+        serverScope.launch {
+            val scoreboard = _playersState.values
+                .map { PlayerScore(name = it.name, score = it.score, team = it.team) }
+                .sortedByDescending { it.score }
+            broadcast(GameMessage.GameOver(scoreboard))
+        }
+    }
+
+    private suspend fun randomizeTeamsEvenly() {
+        val players = _playersState.values.toList()
+        if (players.size > 4) {
+            val shuffled = players.shuffled()
+            val half = shuffled.size / 2
+            shuffled.forEachIndexed { index, player ->
+                val assignedTeam = if (index < half) "RED" else "BLUE"
+                _playersState[player.id] = player.copy(team = assignedTeam)
+            }
+        } else {
+            players.forEach { player ->
+                _playersState[player.id] = player.copy(team = "")
+            }
+        }
+        broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds, customGameMode, customScoreLimit))
     }
 
     fun stop() {

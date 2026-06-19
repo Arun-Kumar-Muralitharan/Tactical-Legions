@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.activegames.tacticallegions.network.ConnectionState
+import com.activegames.tacticallegions.network.GameMode
 import com.activegames.tacticallegions.theme.*
 import com.activegames.tacticallegions.ui.GameViewModel
 import com.activegames.tacticallegions.ui.screens.*
@@ -67,6 +68,8 @@ fun TacticalAppContent(
     val finalScores by viewModel.client.finalScores.collectAsState()
     val isGameActive by viewModel.client.isGameActive.collectAsState()
     val matchDurationSeconds by viewModel.client.matchDurationSeconds.collectAsState()
+    val gameMode by viewModel.client.gameMode.collectAsState()
+    val scoreLimit by viewModel.client.scoreLimit.collectAsState()
 
     val localIp by viewModel.localIp
     val isHost by viewModel.isHost
@@ -113,6 +116,8 @@ fun TacticalAppContent(
                 countdownTime = countdownTime,
                 isTargetInCrosshair = isTargetInCrosshair,
                 successfulHitCount = successfulHitCount,
+                gameMode = gameMode,
+                scoreLimit = scoreLimit,
                 onTargetStatusChanged = { inCrosshair ->
                     viewModel.setTargetStatus(inCrosshair)
                 },
@@ -136,9 +141,20 @@ fun TacticalAppContent(
                 hostIp = displayIp,
                 countdownTime = countdownTime,
                 matchDurationSeconds = matchDurationSeconds,
-                onDurationChanged = { seconds ->
-                    viewModel.configureMatch(seconds)
+                gameMode = gameMode,
+                scoreLimit = scoreLimit,
+                onConfigChanged = { seconds, mode, limit ->
+                    viewModel.configureMatch(seconds, mode, limit)
                 },
+                onTeamSelected = { team ->
+                    viewModel.chooseTeam(team)
+                },
+                onRandomizeTeamsClicked = {
+                    viewModel.randomizeTeams()
+                },
+                // onAddMockPlayersClicked = {
+                //     viewModel.addMockPlayers()
+                // },
                 onReadyToggled = { ready ->
                     viewModel.toggleReady(ready)
                 },

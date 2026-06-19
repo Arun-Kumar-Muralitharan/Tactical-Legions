@@ -27,6 +27,9 @@ fun ScoreScreen(
     title: String = "ROUND OVER",
     onReturnClicked: () -> Unit
 ) {
+    val isTeamPlay = scores.any { it.team == "RED" || it.team == "BLUE" }
+    val redScore = scores.filter { it.team == "RED" }.sumOf { it.score }
+    val blueScore = scores.filter { it.team == "BLUE" }.sumOf { it.score }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -72,6 +75,51 @@ fun ScoreScreen(
                 )
             }
 
+            if (isTeamPlay) {
+                val (victoryText, victoryColor) = when {
+                    redScore > blueScore -> "TEAM RED VICTORIOUS" to CyberRed
+                    blueScore > redScore -> "TEAM BLUE VICTORIOUS" to CyberBlue
+                    else -> "DRAW / TIED MATCH" to CyberGreen
+                }
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(BorderStroke(1.dp, victoryColor.copy(alpha = 0.5f)), RoundedCornerShape(12.dp)),
+                    colors = CardDefaults.cardColors(containerColor = SurfaceGray.copy(alpha = 0.8f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = victoryText,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Black,
+                            color = victoryColor,
+                            letterSpacing = 1.5.sp
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("TEAM RED", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = CyberRed)
+                                Text("$redScore", fontSize = 28.sp, fontWeight = FontWeight.Black, color = CyberRed)
+                            }
+                            Text("VS", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = LightOnBackground.copy(alpha = 0.5f))
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("TEAM BLUE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = CyberBlue)
+                                Text("$blueScore", fontSize = 28.sp, fontWeight = FontWeight.Black, color = CyberBlue)
+                            }
+                        }
+                    }
+                }
+            }
+
             // Standings list
             LazyColumn(
                 modifier = Modifier
@@ -113,12 +161,22 @@ fun ScoreScreen(
                                 )
                             }
                             Spacer(modifier = Modifier.width(16.dp))
-                            Text(
-                                text = item.name.uppercase(),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp,
-                                color = if (isFirst) CyberBlue else Color.White
-                            )
+                            Column {
+                                Text(
+                                    text = item.name.uppercase(),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = if (isFirst) CyberBlue else Color.White
+                                )
+                                if (isTeamPlay && item.team.isNotBlank()) {
+                                    Text(
+                                        text = if (item.team == "RED") "TEAM RED" else "TEAM BLUE",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 10.sp,
+                                        color = if (item.team == "RED") CyberRed else CyberBlue
+                                    )
+                                }
+                            }
                         }
 
                         // Kills Score
