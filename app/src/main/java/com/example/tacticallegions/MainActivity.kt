@@ -114,6 +114,9 @@ fun TacticalAppContent(
                 },
                 onConfirmHit = { targetId ->
                     viewModel.confirmHit(targetId)
+                },
+                onExitClicked = {
+                    viewModel.disconnect()
                 }
             )
         }
