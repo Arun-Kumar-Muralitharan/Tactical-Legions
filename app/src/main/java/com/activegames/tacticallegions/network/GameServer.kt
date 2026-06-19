@@ -105,14 +105,13 @@ class GameServer {
                                 connectedPlayerId?.let { pId ->
                                     sessions.remove(pId)
                                     if (gameStarted) {
-                                        // Match in progress: completely remove them from active target listings
-                                        _playersState.remove(pId)
-                                    } else {
-                                        // Lobby stage: reset ready status so they can reconnect
                                         val existing = _playersState[pId]
                                         if (existing != null) {
-                                            _playersState[pId] = existing.copy(isReady = false)
+                                            _playersState[pId] = existing.copy(isExited = true, isAlive = false, health = 0)
                                         }
+                                    } else {
+                                        // Lobby stage: completely remove them so they don't linger if they disconnect before starting
+                                        _playersState.remove(pId)
                                     }
                                     broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds))
                                 }
@@ -156,7 +155,7 @@ class GameServer {
                 // Reset player health/scores for match start
                 _playersState.keys.forEach { pId ->
                     val p = _playersState[pId]!!
-                    _playersState[pId] = p.copy(health = 100, isAlive = true, score = 0)
+                    _playersState[pId] = p.copy(health = 100, isAlive = true, score = 0, isExited = false)
                 }
                 broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds))
 

@@ -182,13 +182,22 @@ class GameClient {
     }
 
     fun disconnect() {
+        val wasGameActive = _isGameActive.value
+        val currentPlayers = _players.value
+
         _isGameActive.value = false
         _matchDurationSeconds.value = 600
         _connectionState.value = ConnectionState.Disconnected
         _players.value = emptyList()
         _countdownTime.value = null
         _matchTimeRemaining.value = null
-        _finalScores.value = null
+        
+        if (wasGameActive && currentPlayers.isNotEmpty()) {
+            _finalScores.value = currentPlayers.map { PlayerScore(name = it.name, score = it.score) }
+                .sortedByDescending { it.score }
+        } else {
+            _finalScores.value = null
+        }
         
         clientScope.launch {
             try {

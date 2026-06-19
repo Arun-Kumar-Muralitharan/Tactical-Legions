@@ -1,5 +1,7 @@
 package com.activegames.tacticallegions.ui.screens
 
+import android.content.Context
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -27,8 +29,10 @@ fun SetupScreen(
     onJoinClicked: (ip: String, nickname: String) -> Unit,
     errorMessage: String? = null
 ) {
-    var nickname by remember { mutableStateOf("") }
-    var hostIp by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val sharedPreferences = remember { context.getSharedPreferences("tactical_legions_prefs", Context.MODE_PRIVATE) }
+    var nickname by remember { mutableStateOf(sharedPreferences.getString("nickname", "") ?: "") }
+    var hostIp by remember { mutableStateOf(sharedPreferences.getString("host_ip", "") ?: "") }
     var isJoiningMode by remember { mutableStateOf(false) }
 
     Box(
@@ -129,7 +133,9 @@ fun SetupScreen(
                         Button(
                             onClick = {
                                 if (nickname.isNotBlank()) {
-                                    onHostClicked(nickname.trim())
+                                    val trimmed = nickname.trim()
+                                    sharedPreferences.edit().putString("nickname", trimmed).apply()
+                                    onHostClicked(trimmed)
                                 }
                             },
                             enabled = nickname.isNotBlank() && !isJoiningMode,
@@ -198,7 +204,13 @@ fun SetupScreen(
                                 Button(
                                     onClick = {
                                         if (nickname.isNotBlank() && hostIp.isNotBlank()) {
-                                            onJoinClicked(hostIp.trim(), nickname.trim())
+                                            val trimmedNick = nickname.trim()
+                                            val trimmedIp = hostIp.trim()
+                                            sharedPreferences.edit()
+                                                .putString("nickname", trimmedNick)
+                                                .putString("host_ip", trimmedIp)
+                                                .apply()
+                                            onJoinClicked(trimmedIp, trimmedNick)
                                         }
                                     },
                                     enabled = nickname.isNotBlank() && hostIp.isNotBlank(),

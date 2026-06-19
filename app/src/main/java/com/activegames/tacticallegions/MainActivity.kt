@@ -71,7 +71,6 @@ fun TacticalAppContent(
     val localIp by viewModel.localIp
     val isHost by viewModel.isHost
     val isTargetInCrosshair by viewModel.isTargetInCrosshair
-    val abortedScores by viewModel.abortedScores
 
     val context = LocalContext.current
     var hasCameraPermission by remember {
@@ -94,19 +93,12 @@ fun TacticalAppContent(
     }
 
     when {
-        abortedScores != null -> {
-            ScoreScreen(
-                scores = abortedScores!!,
-                title = "MISSION ABORTED",
-                onReturnClicked = {
-                    viewModel.clearAbortedScores()
-                }
-            )
-        }
         finalScores != null -> {
+            val isDisconnected = connectionState is ConnectionState.Disconnected || connectionState is ConnectionState.Failed
+            val titleText = if (isDisconnected) "MISSION ABORTED" else "ROUND OVER"
             ScoreScreen(
                 scores = finalScores!!,
-                title = "ROUND OVER",
+                title = titleText,
                 onReturnClicked = {
                     viewModel.disconnect()
                 }
@@ -131,7 +123,7 @@ fun TacticalAppContent(
                     viewModel.confirmHit(targetId)
                 },
                 onExitClicked = {
-                    viewModel.abortGame()
+                    viewModel.disconnect()
                 }
             )
         }
