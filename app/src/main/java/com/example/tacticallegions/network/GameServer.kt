@@ -99,10 +99,15 @@ class GameServer {
                                 // Clean up on disconnect
                                 connectedPlayerId?.let { pId ->
                                     sessions.remove(pId)
-                                    // Keep player state so they can reconnect, but mark them as un-ready
-                                    val existing = _playersState[pId]
-                                    if (existing != null) {
-                                        _playersState[pId] = existing.copy(isReady = false)
+                                    if (gameStarted) {
+                                        // Match in progress: completely remove them from active target listings
+                                        _playersState.remove(pId)
+                                    } else {
+                                        // Lobby stage: reset ready status so they can reconnect
+                                        val existing = _playersState[pId]
+                                        if (existing != null) {
+                                            _playersState[pId] = existing.copy(isReady = false)
+                                        }
                                     }
                                     broadcast(GameMessage.LobbyUpdate(_playersState.values.toList()))
                                 }

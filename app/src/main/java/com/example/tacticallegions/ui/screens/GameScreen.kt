@@ -44,7 +44,8 @@ fun GameScreen(
     isTargetInCrosshair: Boolean,
     onTargetStatusChanged: (Boolean) -> Unit,
     onShootTriggered: () -> Unit,
-    onConfirmHit: (String) -> Unit
+    onConfirmHit: (String) -> Unit,
+    onExitClicked: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -57,6 +58,7 @@ fun GameScreen(
 
     // Show selection dialog when user tapped trigger and target was locked
     var showTargetSelector by remember { mutableStateOf(false) }
+    var showExitConfirmation by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -148,21 +150,84 @@ fun GameScreen(
                     )
                 }
 
-                // Score HUD
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = SurfaceGray.copy(alpha = 0.7f)),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, GlassWhite)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "SCORE: $score",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = CyberGreen,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                        letterSpacing = 1.sp
-                    )
+                    // Score HUD
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SurfaceGray.copy(alpha = 0.7f)),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, GlassWhite)
+                    ) {
+                        Text(
+                            text = "SCORE: $score",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CyberGreen,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                            letterSpacing = 1.sp
+                        )
+                    }
+
+                    // Exit Match Button
+                    IconButton(
+                        onClick = { showExitConfirmation = true },
+                        colors = IconButtonDefaults.iconButtonColors(containerColor = CyberRed.copy(alpha = 0.85f)),
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Text(
+                            text = "X",
+                            fontWeight = FontWeight.Black,
+                            color = Color.White,
+                            fontSize = 14.sp
+                        )
+                    }
                 }
+            }
+
+            if (showExitConfirmation) {
+                AlertDialog(
+                    onDismissRequest = { showExitConfirmation = false },
+                    title = {
+                        Text(
+                            text = "ABORT MISSION?",
+                            color = CyberRed,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 18.sp,
+                            letterSpacing = 2.sp
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = "Are you sure you want to disconnect and abandon the active match?",
+                            color = Color.White,
+                            fontSize = 14.sp
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                showExitConfirmation = false
+                                onExitClicked()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberRed)
+                        ) {
+                            Text("ABORT", fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = { showExitConfirmation = false },
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+                        ) {
+                            Text("CANCEL", fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    containerColor = SurfaceGray,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.border(BorderStroke(1.dp, CyberRed), RoundedCornerShape(16.dp))
+                )
             }
 
             // Health Status Bar
