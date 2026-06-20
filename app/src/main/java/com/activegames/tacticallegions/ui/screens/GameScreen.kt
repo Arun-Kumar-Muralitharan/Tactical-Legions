@@ -37,6 +37,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.activegames.tacticallegions.camera.FaceAnalyzer
+import com.activegames.tacticallegions.camera.FrontFaceAnalyzer
+import com.activegames.tacticallegions.camera.WarningFeedbackHelper
+import androidx.camera.core.ConcurrentCamera
+import androidx.camera.core.UseCaseGroup
 import com.activegames.tacticallegions.network.PlayerState
 import com.activegames.tacticallegions.theme.*
 import java.util.concurrent.ExecutorService
@@ -52,6 +56,7 @@ fun GameScreen(
     successfulHitCount: Int,
     gameMode: GameMode,
     scoreLimit: Int,
+    isFaceCoveredDev: Boolean,
     onTargetStatusChanged: (Boolean) -> Unit,
     onShootTriggered: () -> Unit,
     onConfirmHit: (String) -> Unit,
@@ -61,6 +66,67 @@ fun GameScreen(
     val activity = remember(context) { context.findActivity() }
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+
+    var isFaceCoveredFromCamera by remember { mutableStateOf(false) }
+    val isFaceCovered = isFaceCoveredFromCamera || isFaceCoveredDev
+    var isScreenBlackout by remember { mutableStateOf(false) }
+
+    val warningFeedbackHelper = remember(context) { WarningFeedbackHelper(context) }
+    DisposableEffect(warningFeedbackHelper) {
+        onDispose {
+            warningFeedbackHelper.release()
+        }
+    }
+
+    var coveringStartTimestamp by remember { mutableStateOf<Long?>(null) }
+    var lastWarningTimestamp by remember { mutableStateOf(0L) }
+
+    LaunchedEffect(isFaceCovered, isScreenBlackout) {
+        if (isFaceCovered && !isScreenBlackout) {
+            coveringStartTimestamp = System.currentTimeMillis()
+            warningFeedbackHelper.triggerWarning()
+            lastWarningTimestamp = System.currentTimeMillis()
+        } else {
+            coveringStartTimestamp = null
+        }
+    }
+
+    LaunchedEffect(isFaceCovered, isScreenBlackout) {
+        if (isFaceCovered && !isScreenBlackout) {
+            while (true) {
+                val now = System.currentTimeMillis()
+                val start = coveringStartTimestamp ?: now
+                val durationCovered = now - start
+
+                if (durationCovered >= 5000L) {
+                    isScreenBlackout = true
+                    coveringStartTimestamp = null
+                    break
+                }
+
+                if (now - lastWarningTimestamp >= 1500L) {
+                    warningFeedbackHelper.triggerWarning()
+                    lastWarningTimestamp = now
+                }
+
+                kotlinx.coroutines.delay(100)
+            }
+        }
+    }
+
+    LaunchedEffect(isScreenBlackout) {
+        if (isScreenBlackout) {
+            warningFeedbackHelper.startBlackoutVibration()
+            kotlinx.coroutines.delay(3000L)
+            warningFeedbackHelper.stopVibration()
+            isScreenBlackout = false
+            if (isFaceCovered) {
+                coveringStartTimestamp = System.currentTimeMillis()
+                warningFeedbackHelper.triggerWarning()
+                lastWarningTimestamp = System.currentTimeMillis()
+            }
+        }
+    }
 
     val localPlayer = players.find { it.id == localPlayerId }
     val health = localPlayer?.health ?: 100
@@ -159,17 +225,80 @@ fun GameScreen(
                                 ))
                             }
 
-                        val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                        val frontAnalyzer = ImageAnalysis.Builder()
+                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .build()
+                            .also {
+                                it.setAnalyzer(cameraExecutor, FrontFaceAnalyzer { isCovering ->
+                                    activity?.runOnUiThread {
+                                        isFaceCoveredFromCamera = isCovering
+                                    }
+                                })
+                            }
+
+                        val concurrentCameraInfos = cameraProvider.availableConcurrentCameraInfos
+                        android.util.Log.d("TacticalLegionsCamera", "availableConcurrentCameraInfos size: ${concurrentCameraInfos.size}")
+                        
+                        var backSelector: CameraSelector? = null
+                        var frontSelector: CameraSelector? = null
+
+                        for (cameraInfos in concurrentCameraInfos) {
+                            val fSel = cameraInfos.firstOrNull { it.lensFacing == CameraSelector.LENS_FACING_FRONT }?.cameraSelector
+                            val bSel = cameraInfos.firstOrNull { it.lensFacing == CameraSelector.LENS_FACING_BACK }?.cameraSelector
+                            if (fSel != null && bSel != null) {
+                                frontSelector = fSel
+                                backSelector = bSel
+                                android.util.Log.d("TacticalLegionsCamera", "Found concurrent cameras: front = $fSel, back = $bSel")
+                                break
+                            }
+                        }
+
+                        val isConcurrentSupported = frontSelector != null && backSelector != null
+                        android.util.Log.d("TacticalLegionsCamera", "isConcurrentSupported: $isConcurrentSupported")
+
+                        val finalBackSelector = backSelector ?: CameraSelector.DEFAULT_BACK_CAMERA
+                        val finalFrontSelector = frontSelector ?: CameraSelector.DEFAULT_FRONT_CAMERA
+
                         try {
                             cameraProvider.unbindAll()
-                            cameraProvider.bindToLifecycle(
-                                lifecycleOwner,
-                                cameraSelector,
-                                preview,
-                                imageAnalyzer
+                            android.util.Log.d("TacticalLegionsCamera", "Attempting concurrent camera binding...")
+                            val backUseCaseGroup = UseCaseGroup.Builder()
+                                .addUseCase(preview)
+                                .addUseCase(imageAnalyzer)
+                                .build()
+
+                            val frontUseCaseGroup = UseCaseGroup.Builder()
+                                .addUseCase(frontAnalyzer)
+                                .build()
+
+                            val backConfig = ConcurrentCamera.SingleCameraConfig(
+                                finalBackSelector,
+                                backUseCaseGroup,
+                                lifecycleOwner
                             )
+
+                            val frontConfig = ConcurrentCamera.SingleCameraConfig(
+                                finalFrontSelector,
+                                frontUseCaseGroup,
+                                lifecycleOwner
+                            )
+
+                            cameraProvider.bindToLifecycle(listOf(backConfig, frontConfig))
+                            android.util.Log.d("TacticalLegionsCamera", "Successfully bound concurrent cameras (forced)")
                         } catch (e: Exception) {
-                            e.printStackTrace()
+                            android.util.Log.e("TacticalLegionsCamera", "Failed concurrent binding, falling back to back camera only", e)
+                            try {
+                                cameraProvider.unbindAll()
+                                cameraProvider.bindToLifecycle(
+                                    lifecycleOwner,
+                                    CameraSelector.DEFAULT_BACK_CAMERA,
+                                    preview,
+                                    imageAnalyzer
+                                )
+                                android.util.Log.d("TacticalLegionsCamera", "Successfully fell back to back camera only")
+                            } catch (fallbackEx: Exception) {
+                                android.util.Log.e("TacticalLegionsCamera", "Error during fallback camera binding", fallbackEx)
+                            }
                         }
                     }, ContextCompat.getMainExecutor(ctx))
                     previewView
@@ -508,6 +637,65 @@ fun GameScreen(
         }
 
         // The old full screen overlay has been removed to display "Wait until Respawn" directly over the view bounds.
+        
+        // Face Covered Warning Text overlay (displayed before blackout)
+        if (isAlive && isFaceCovered && !isScreenBlackout) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 180.dp), // Position below top HUD
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = CyberRed.copy(alpha = 0.85f)),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.5.dp, Color.White),
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                ) {
+                    Text(
+                        text = "WARNING: DO NOT COVER YOUR FACE",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        letterSpacing = 1.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+
+        // Full screen blackout overlay for Face Covering
+        if (isScreenBlackout) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+                    .clickable(enabled = false) {}, // Intercept/absorb click events to block screen interactions
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "UNCOVER YOUR FACE",
+                        color = CyberRed,
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 2.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = "Do not point your phone straight to your face or cover your face with it.",
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 16.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 32.dp)
+                    )
+                }
+            }
+        }
     }
 }
 

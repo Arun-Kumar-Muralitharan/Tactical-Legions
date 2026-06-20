@@ -137,6 +137,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         client.shoot(targetId)
     }
 
+    var isFaceCoveredDevToggle = mutableStateOf(false)
+        private set
+
+    fun toggleFaceCoverDev() {
+        isFaceCoveredDevToggle.value = !isFaceCoveredDevToggle.value
+    }
+
     fun disconnect() {
         soundHaptic.stopVibration()
         client.disconnect()
@@ -144,6 +151,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         server = null
         isHost.value = false
         localIp.value = "127.0.0.1"
+        isFaceCoveredDevToggle.value = false
     }
 
     override fun onCleared() {

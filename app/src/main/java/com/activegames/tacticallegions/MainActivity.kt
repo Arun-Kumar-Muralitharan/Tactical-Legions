@@ -2,6 +2,7 @@ package com.activegames.tacticallegions
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.view.KeyEvent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -29,6 +30,10 @@ import com.activegames.tacticallegions.ui.screens.*
 
 class MainActivity : ComponentActivity() {
 
+    private val viewModel by lazy {
+        androidx.lifecycle.ViewModelProvider(this)[GameViewModel::class.java]
+    }
+
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
@@ -50,11 +55,19 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    TacticalAppContent()
+                    TacticalAppContent(viewModel)
                 }
             }
         }
     }
+
+    // override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+    //     if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+    //         viewModel.toggleFaceCoverDev()
+    //         return true
+    //     }
+    //     return super.onKeyDown(keyCode, event)
+    // }
 }
 
 @Composable
@@ -109,6 +122,7 @@ fun TacticalAppContent(
         }
         isGameActive -> {
             val successfulHitCount by viewModel.successfulHitCount
+            val isFaceCoveredDev by viewModel.isFaceCoveredDevToggle
             GameScreen(
                 players = players,
                 localPlayerId = viewModel.client.playerId,
@@ -118,6 +132,7 @@ fun TacticalAppContent(
                 successfulHitCount = successfulHitCount,
                 gameMode = gameMode,
                 scoreLimit = scoreLimit,
+                isFaceCoveredDev = isFaceCoveredDev,
                 onTargetStatusChanged = { inCrosshair ->
                     viewModel.setTargetStatus(inCrosshair)
                 },
