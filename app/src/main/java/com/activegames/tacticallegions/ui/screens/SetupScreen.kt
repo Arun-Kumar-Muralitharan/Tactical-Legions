@@ -15,8 +15,9 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import com.activegames.tacticallegions.camera.FaceSignatureHelper
-import java.util.concurrent.Executors
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import java.util.concurrent.Executors
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.animation.expandVertically
@@ -52,6 +53,7 @@ fun SetupScreen(
     errorMessage: String? = null
 ) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val sharedPreferences = remember { context.getSharedPreferences("tactical_legions_prefs", Context.MODE_PRIVATE) }
     var nickname by remember { mutableStateOf(sharedPreferences.getString("nickname", "") ?: "") }
     var hostIp by remember { mutableStateOf(sharedPreferences.getString("host_ip", "") ?: "") }
@@ -183,7 +185,10 @@ fun SetupScreen(
                             }
                             
                             Button(
-                                onClick = { showCameraRegistration = true },
+                                onClick = {
+                                     focusManager.clearFocus()
+                                     showCameraRegistration = true
+                                },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (faceSignature != null) SurfaceGray else CyberRed,
                                     contentColor = if (faceSignature != null) CyberGreen else Color.White

@@ -12,6 +12,12 @@ import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import com.google.mlkit.vision.face.FaceLandmark
 import kotlin.math.hypot
+import android.content.Context
+import android.media.AudioManager
+import android.media.ToneGenerator
+import android.os.Vibrator
+import android.os.VibrationEffect
+import android.os.Build
 
 object FaceSignatureHelper {
     
@@ -145,5 +151,106 @@ class FaceAnalyzer(
                 e.printStackTrace()
                 imageProxy.close()
             }
+    }
+}
+
+class FrontFaceAnalyzer(
+    private val onFaceDetected: (Boolean) -> Unit
+) : ImageAnalysis.Analyzer {
+
+    private val options = FaceDetectorOptions.Builder()
+        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+        .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_NONE)
+        .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_NONE)
+        .build()
+
+    private val detector = FaceDetection.getClient(options)
+
+    @OptIn(ExperimentalGetImage::class)
+    override fun analyze(imageProxy: ImageProxy) {
+        val mediaImage = imageProxy.image
+        if (mediaImage == null) {
+            imageProxy.close()
+            return
+        }
+
+        val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+
+        detector.process(image)
+            .addOnSuccessListener { faces ->
+                onFaceDetected(faces.isNotEmpty())
+                imageProxy.close()
+            }
+            .addOnFailureListener { e ->
+                e.printStackTrace()
+                imageProxy.close()
+            }
+    }
+}
+
+class WarningFeedbackHelper(context: Context) {
+    private var toneGenerator: ToneGenerator? = null
+    private val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+
+    init {
+        try {
+            toneGenerator = ToneGenerator(AudioManager.STREAM_ALARM, 100)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun triggerWarning() {
+        try {
+            toneGenerator?.startTone(ToneGenerator.TONE_CDMA_PIP, 200)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        try {
+            vibrator?.let {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    it.vibrate(VibrationEffect.createOneShot(300, VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    @Suppress("DEPRECATION")
+                    it.vibrate(300)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun startBlackoutVibration() {
+        try {
+            vibrator?.let {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    it.vibrate(VibrationEffect.createOneShot(3000, VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    @Suppress("DEPRECATION")
+                    it.vibrate(3000)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun stopVibration() {
+        try {
+            vibrator?.cancel()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun release() {
+        try {
+            stopVibration()
+            toneGenerator?.release()
+            toneGenerator = null
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }
