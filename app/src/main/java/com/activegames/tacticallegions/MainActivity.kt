@@ -98,7 +98,7 @@ fun TacticalAppContent(
     when {
         finalScores != null -> {
             val isDisconnected = connectionState is ConnectionState.Disconnected || connectionState is ConnectionState.Failed
-            val titleText = if (isDisconnected) "MISSION ABORTED" else "ROUND OVER"
+            val titleText = if (isDisconnected) "MISSION ABORTED" else "TIME'S UP!!"
             ScoreScreen(
                 scores = finalScores!!,
                 title = titleText,
@@ -169,11 +169,11 @@ fun TacticalAppContent(
         else -> {
             val errorMsg = (connectionState as? ConnectionState.Failed)?.reason
             SetupScreen(
-                onHostClicked = { nickname ->
-                    viewModel.startHost(nickname)
+                onHostClicked = { nickname, faceSignature ->
+                    viewModel.startHost(nickname, faceSignature)
                 },
-                onJoinClicked = { ip, nickname ->
-                    viewModel.joinGame(ip, nickname)
+                onJoinClicked = { ip, nickname, faceSignature ->
+                    viewModel.joinGame(ip, nickname, faceSignature)
                 },
                 errorMessage = errorMsg
             )

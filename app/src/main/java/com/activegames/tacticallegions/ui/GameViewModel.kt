@@ -76,7 +76,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun startHost(nickname: String, port: Int = 8080) {
+    fun startHost(nickname: String, faceSignature: List<Float>, port: Int = 8080) {
         viewModelScope.launch {
             isHost.value = true
             val activeServer = GameServer()
@@ -87,13 +87,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             kotlinx.coroutines.delay(500)
             localIp.value = activeServer.serverIp.value
 
-            client.connect(host = "127.0.0.1", port = port, nickname = nickname)
+            client.connect(host = "127.0.0.1", port = port, nickname = nickname, faceSignature = faceSignature)
         }
     }
 
-    fun joinGame(hostIp: String, nickname: String, port: Int = 8080) {
+    fun joinGame(hostIp: String, nickname: String, faceSignature: List<Float>, port: Int = 8080) {
         isHost.value = false
-        client.connect(host = hostIp, port = port, nickname = nickname)
+        client.connect(host = hostIp, port = port, nickname = nickname, faceSignature = faceSignature)
     }
 
     fun toggleReady(ready: Boolean) {

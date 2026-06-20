@@ -30,6 +30,10 @@ fun ScoreScreen(
     val isTeamPlay = scores.any { it.team == "RED" || it.team == "BLUE" }
     val redScore = scores.filter { it.team == "RED" }.sumOf { it.score }
     val blueScore = scores.filter { it.team == "BLUE" }.sumOf { it.score }
+    
+    val maxScore = scores.maxOfOrNull { it.score } ?: -1
+    val topRedScore = if (isTeamPlay) scores.filter { it.team == "RED" }.maxOfOrNull { it.score } ?: -1 else -1
+    val topBlueScore = if (isTeamPlay) scores.filter { it.team == "BLUE" }.maxOfOrNull { it.score } ?: -1 else -1
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -162,8 +166,11 @@ fun ScoreScreen(
                             }
                             Spacer(modifier = Modifier.width(16.dp))
                             Column {
+                                val showCrown = (item.score == maxScore && maxScore > 0) ||
+                                        (isTeamPlay && item.team == "RED" && item.score == topRedScore && topRedScore > 0) ||
+                                        (isTeamPlay && item.team == "BLUE" && item.score == topBlueScore && topBlueScore > 0)
                                 Text(
-                                    text = item.name.uppercase(),
+                                    text = item.name.uppercase() + if (showCrown) " 👑" else "",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 18.sp,
                                     color = if (isFirst) CyberBlue else Color.White
@@ -208,7 +215,7 @@ fun ScoreScreen(
                     .height(56.dp)
             ) {
                 Text(
-                    text = "RETURN TO REGISTRATION",
+                    text = "HOME",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.sp

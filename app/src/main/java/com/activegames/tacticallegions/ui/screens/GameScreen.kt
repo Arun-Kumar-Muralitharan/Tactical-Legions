@@ -58,6 +58,7 @@ fun GameScreen(
     onExitClicked: () -> Unit
 ) {
     val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
 
@@ -90,11 +91,7 @@ fun GameScreen(
     var activeTargetId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(otherPlayers) {
-        if (otherPlayers.isNotEmpty()) {
-            if (activeTargetId == null || otherPlayers.none { it.id == activeTargetId }) {
-                activeTargetId = otherPlayers.first().id
-            }
-        } else {
+        if (activeTargetId != null && otherPlayers.none { it.id == activeTargetId }) {
             activeTargetId = null
         }
     }
@@ -151,9 +148,15 @@ fun GameScreen(
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                             .build()
                             .also {
-                                it.setAnalyzer(cameraExecutor, FaceAnalyzer { inCrosshair ->
-                                    onTargetStatusChanged(inCrosshair)
-                                })
+                                it.setAnalyzer(cameraExecutor, FaceAnalyzer(
+                                    getOtherPlayers = { otherPlayers },
+                                    onTargetLocked = { inCrosshair, targetId ->
+                                        activity?.runOnUiThread {
+                                            onTargetStatusChanged(inCrosshair)
+                                            activeTargetId = targetId
+                                        }
+                                    }
+                                ))
                             }
 
                         val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
@@ -447,53 +450,32 @@ fun GameScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Pre-selection Lock-on Target HUD
-                    if (otherPlayers.isNotEmpty()) {
-                        val currentTarget = otherPlayers.find { it.id == activeTargetId } ?: otherPlayers.firstOrNull()
-                        val isTargetAlive = currentTarget?.isAlive ?: true
-                        val targetName = currentTarget?.name?.uppercase() ?: "NONE"
-                        val displayTargetName = if (isTargetAlive) targetName else "$targetName [DEAD]"
-                        val targetColor = if (isTargetAlive) CyberRed else Color.Gray
-                        
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .background(SurfaceGray.copy(alpha = 0.85f), RoundedCornerShape(12.dp))
-                                .border(BorderStroke(1.dp, GlassWhite), RoundedCornerShape(12.dp))
-                                .clickable(enabled = otherPlayers.size > 1) {
-                                    val currentIndex = otherPlayers.indexOfFirst { it.id == activeTargetId }
-                                    if (currentIndex != -1) {
-                                        val nextIndex = (currentIndex + 1) % otherPlayers.size
-                                        activeTargetId = otherPlayers[nextIndex].id
-                                    }
-                                }
-                                .padding(horizontal = 14.dp, vertical = 8.dp)
-                        ) {
-                            Text(
-                                text = "LOCKED TARGET: ",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = LightOnBackground.copy(alpha = 0.6f),
-                                letterSpacing = 1.5.sp
-                            )
-                            Text(
-                                text = displayTargetName,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = targetColor,
-                                letterSpacing = 0.5.sp
-                            )
-                            if (otherPlayers.size > 1) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "(TAP TO CYCLE)",
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = CyberBlue,
-                                    letterSpacing = 0.5.sp
-                                )
-                            }
-                        }
+                    // Face Lock-on Target HUD
+                    val currentTarget = otherPlayers.find { it.id == activeTargetId }
+                    val displayTargetName = currentTarget?.name?.uppercase() ?: "NO TARGET ACQUIRED"
+                    val targetColor = if (currentTarget != null) CyberRed else LightOnBackground.copy(alpha = 0.6f)
+                    
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .background(SurfaceGray.copy(alpha = 0.85f), RoundedCornerShape(12.dp))
+                            .border(BorderStroke(1.dp, GlassWhite), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = "LOCK STATUS: ",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = LightOnBackground.copy(alpha = 0.6f),
+                            letterSpacing = 1.5.sp
+                        )
+                        Text(
+                            text = displayTargetName,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = targetColor,
+                            letterSpacing = 0.5.sp
+                        )
                     }
 
                     // FIRE trigger

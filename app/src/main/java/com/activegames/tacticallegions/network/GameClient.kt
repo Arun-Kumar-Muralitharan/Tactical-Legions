@@ -73,7 +73,7 @@ class GameClient {
     private val _respawnedEvent = MutableSharedFlow<String>() // playerId
     val respawnedEvent = _respawnedEvent.asSharedFlow()
 
-    fun connect(host: String, port: Int = 8080, nickname: String) {
+    fun connect(host: String, port: Int = 8080, nickname: String, faceSignature: List<Float>) {
         playerNickname = nickname
         _connectionState.value = ConnectionState.Connecting
         
@@ -90,7 +90,7 @@ class GameClient {
                 _connectionState.value = ConnectionState.Connected
 
                 // Join the game immediately upon connection
-                sendMessage(GameMessage.Join(nickname, playerId))
+                sendMessage(GameMessage.Join(nickname, playerId, faceSignature))
 
                 // Start listening for messages
                 for (frame in wsSession.incoming) {

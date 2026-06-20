@@ -68,13 +68,14 @@ class GameServer {
                                                 
                                                 // Create or update player state
                                                 val existing = _playersState[message.playerId]
-                                                val player = existing ?: PlayerState(
+                                                val player = existing?.copy(faceSignature = message.faceSignature) ?: PlayerState(
                                                     id = message.playerId,
                                                     name = message.nickname,
                                                     isReady = false,
                                                     isAlive = true,
                                                     health = 100,
-                                                    score = 0
+                                                    score = 0,
+                                                    faceSignature = message.faceSignature
                                                 )
                                                 _playersState[message.playerId] = player
                                                 
