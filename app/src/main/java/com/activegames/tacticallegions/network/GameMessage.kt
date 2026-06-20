@@ -11,7 +11,8 @@ data class PlayerState(
     val health: Int,
     val score: Int,
     val isExited: Boolean = false,
-    val team: String = ""
+    val team: String = "",
+    val faceSignature: List<Float>? = null
 )
 
 @Serializable
@@ -39,7 +40,11 @@ sealed class GameMessage {
     // object AddMockPlayers : GameMessage()
 
     @Serializable
-    data class Join(val nickname: String, val playerId: String) : GameMessage()
+    data class Join(
+        val nickname: String,
+        val playerId: String,
+        val faceSignature: List<Float>? = null
+    ) : GameMessage()
 
     @Serializable
     data class LobbyUpdate(

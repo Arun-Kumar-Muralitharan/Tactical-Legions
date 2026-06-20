@@ -104,4 +104,24 @@ class GameUnitTest {
             )
         )
     }
+
+    @Test
+    fun testFaceSignatureMatching() {
+        val sig1 = listOf(0.8f, 0.8f, 1.2f, 1.2f, 0.5f, 0.5f, 0.6f, 0.8f, 0.8f, 1.3f)
+        // Highly similar face (slightly different ratios due to movement/noise)
+        val sigSimilar = listOf(0.81f, 0.79f, 1.22f, 1.18f, 0.51f, 0.49f, 0.61f, 0.81f, 0.79f, 1.31f)
+        // Completely different face structure
+        val sigDifferent = listOf(1.5f, 0.4f, 2.2f, 0.8f, 0.9f, 0.2f, 1.1f, 1.9f, 0.3f, 2.5f)
+
+        val diffSimilar = com.activegames.tacticallegions.camera.FaceSignatureHelper.calculateDifference(sig1, sigSimilar)
+        val diffDifferent = com.activegames.tacticallegions.camera.FaceSignatureHelper.calculateDifference(sig1, sigDifferent)
+
+        // Similar faces must be well within our match threshold of 0.08
+        assertTrue("Similar faces difference score ($diffSimilar) should be low", diffSimilar < 0.01f)
+        assertTrue("Similar faces difference score should be below matching threshold", diffSimilar <= 0.08f)
+
+        // Different faces must be far above the threshold
+        assertTrue("Different faces difference score ($diffDifferent) should be high", diffDifferent > 0.5f)
+        assertTrue("Different faces difference score should exceed matching threshold", diffDifferent > 0.08f)
+    }
 }
