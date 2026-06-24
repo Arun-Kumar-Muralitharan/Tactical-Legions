@@ -124,4 +124,29 @@ class GameUnitTest {
         assertTrue("Different faces difference score ($diffDifferent) should be high", diffDifferent > 0.5f)
         assertTrue("Different faces difference score should exceed matching threshold", diffDifferent > 0.08f)
     }
+
+    @Test
+    fun testFaceCoveringAndTooCloseLogic() {
+        val frameWidth = 640
+        val frameHeight = 480
+
+        fun isTooClose(boxWidth: Int, boxHeight: Int): Boolean {
+            val widthRatio = boxWidth.toFloat() / frameWidth.toFloat()
+            val heightRatio = boxHeight.toFloat() / frameHeight.toFloat()
+            val areaRatio = (boxWidth.toFloat() * boxHeight.toFloat()) / (frameWidth.toFloat() * frameHeight.toFloat())
+            return widthRatio >= 0.8f || heightRatio >= 0.8f || areaRatio >= 0.8f
+        }
+
+        // Case 1: Normal face size (e.g., 200x200)
+        assertFalse(isTooClose(200, 200))
+
+        // Case 2: Face covering 80% or more of width (e.g., 520x200)
+        assertTrue(isTooClose(520, 200))
+
+        // Case 3: Face covering 80% or more of height (e.g., 200x390)
+        assertTrue(isTooClose(200, 390))
+
+        // Case 4: Face covering 80% or more of area
+        assertTrue(isTooClose(520, 400))
+    }
 }

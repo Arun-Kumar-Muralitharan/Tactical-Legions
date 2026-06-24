@@ -178,7 +178,24 @@ class FrontFaceAnalyzer(
 
         detector.process(image)
             .addOnSuccessListener { faces ->
-                onFaceDetected(faces.isNotEmpty())
+                val face = faces.firstOrNull()
+                if (face == null) {
+                    // No face detected -> face is covered
+                    onFaceDetected(true)
+                } else {
+                    val box = face.boundingBox
+                    val frameWidth = imageProxy.width
+                    val frameHeight = imageProxy.height
+
+                    val widthRatio = box.width().toFloat() / frameWidth.toFloat()
+                    val heightRatio = box.height().toFloat() / frameHeight.toFloat()
+                    val areaRatio = (box.width().toFloat() * box.height().toFloat()) / (frameWidth.toFloat() * frameHeight.toFloat())
+
+                    // If face covers 80% or more of the width, height, or total area,
+                    // we treat it as too close / covered.
+                    val isTooClose = widthRatio >= 0.8f || heightRatio >= 0.8f || areaRatio >= 0.8f
+                    onFaceDetected(isTooClose)
+                }
                 imageProxy.close()
             }
             .addOnFailureListener { e ->
