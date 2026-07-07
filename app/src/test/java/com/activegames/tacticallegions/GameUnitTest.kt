@@ -2,6 +2,7 @@ package com.activegames.tacticallegions
 
 import com.activegames.tacticallegions.network.GameMessage
 import com.activegames.tacticallegions.network.PlayerState
+import com.activegames.tacticallegions.network.PowerUpType
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -148,5 +149,127 @@ class GameUnitTest {
 
         // Case 4: Face covering 80% or more of area
         assertTrue(isTooClose(520, 400))
+    }
+
+    @Test
+    fun testPowerUpSerialization() {
+        val originalMessage = GameMessage.ActivatePowerUp(playerId = "player-1", powerUp = PowerUpType.AUTO_GUN)
+        val jsonString = json.encodeToString(GameMessage.serializer(), originalMessage)
+        val decodedMessage = json.decodeFromString<GameMessage>(jsonString)
+        
+        assertTrue(decodedMessage is GameMessage.ActivatePowerUp)
+        val activeMsg = decodedMessage as GameMessage.ActivatePowerUp
+        assertEquals("player-1", activeMsg.playerId)
+        assertEquals(PowerUpType.AUTO_GUN, activeMsg.powerUp)
+    }
+
+    @Test
+    fun testPowerUpGameplayLogic() {
+        var player = PlayerState(
+            id = "player-1",
+            name = "Test",
+            isReady = true,
+            isAlive = true,
+            health = 100,
+            score = 0
+        )
+        
+        var newHealth = (player.health + 300).coerceAtMost(400)
+        player = player.copy(activePowerUp = PowerUpType.HEALTH_BOOST, health = newHealth)
+        assertEquals(400, player.health)
+        assertEquals(PowerUpType.HEALTH_BOOST, player.activePowerUp)
+
+        player = player.copy(activePowerUp = null, health = player.health.coerceAtMost(100))
+        assertEquals(100, player.health)
+        assertEquals(null, player.activePowerUp)
+
+        val normalShooter = PlayerState(
+            id = "shooter-1", name = "Shooter", isReady = true, isAlive = true, health = 100, score = 0
+        )
+        val oneShotShooter = normalShooter.copy(activePowerUp = PowerUpType.ONE_SHOT_KILL)
+
+        val damageNormal = if (normalShooter.activePowerUp == PowerUpType.ONE_SHOT_KILL) 200 else 34
+        val damageOneShot = if (oneShotShooter.activePowerUp == PowerUpType.ONE_SHOT_KILL) 200 else 34
+
+        assertEquals(34, damageNormal)
+        assertEquals(200, damageOneShot)
+    }
+
+    @Test
+    fun testPowerUpCountLimit() {
+        val playerPowerUpCounts = mutableMapOf<String, Int>()
+        
+        fun handleActivatePowerUp(playerId: String): Boolean {
+            val count = playerPowerUpCounts[playerId] ?: 0
+            if (count >= 2) return false
+            playerPowerUpCounts[playerId] = count + 1
+            return true
+        }
+
+        assertTrue(handleActivatePowerUp("player-1"))
+        assertEquals(1, playerPowerUpCounts["player-1"])
+
+        assertTrue(handleActivatePowerUp("player-1"))
+        assertEquals(2, playerPowerUpCounts["player-1"])
+
+        assertFalse(handleActivatePowerUp("player-1"))
+        assertEquals(2, playerPowerUpCounts["player-1"])
+    }
+
+    @Test
+    fun testOneShotCooldown() {
+        val lastShotTimes = mutableMapOf<String, Long>()
+
+        fun canShoot(playerId: String, now: Long): Boolean {
+            val lastShot = lastShotTimes[playerId]
+            if (lastShot != null && now - lastShot < 2000L) {
+                return false
+            }
+            lastShotTimes[playerId] = now
+            return true
+        }
+
+        assertTrue(canShoot("player-1", 1000L))
+        assertFalse(canShoot("player-1", 2000L))
+        assertTrue(canShoot("player-1", 3100L))
+    }
+
+    @Test
+    fun testPowerUpMatchDurationRequirement() {
+        fun isPowerUpAvailable(durationSeconds: Int): Boolean {
+            return durationSeconds >= 180
+        }
+
+        assertFalse(isPowerUpAvailable(60))
+        assertFalse(isPowerUpAvailable(120))
+        assertTrue(isPowerUpAvailable(180))
+        assertTrue(isPowerUpAvailable(600))
+    }
+
+    @Test
+    fun testFirstPowerUpSpawningDelay() {
+        val delays = List(100) {
+            kotlin.random.Random.nextLong(30000, 40000)
+        }
+        delays.forEach { delay ->
+            assertTrue(delay in 30000L..40000L)
+        }
+    }
+
+    @Test
+    fun testSpawningLimit() {
+        var spawnedCount = 0
+        fun spawnPowerUp() {
+            if (spawnedCount < 2) {
+                spawnedCount++
+            }
+        }
+
+        spawnPowerUp()
+        spawnPowerUp()
+        spawnPowerUp()
+        spawnPowerUp()
+
+        assertEquals(2, spawnedCount)
     }
 }

@@ -24,6 +24,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.activegames.tacticallegions.network.ConnectionState
 import com.activegames.tacticallegions.network.GameMode
+import com.activegames.tacticallegions.network.PowerUpType
 import com.activegames.tacticallegions.theme.*
 import com.activegames.tacticallegions.ui.GameViewModel
 import com.activegames.tacticallegions.ui.screens.*
@@ -127,6 +128,7 @@ fun TacticalAppContent(
                 players = players,
                 localPlayerId = viewModel.client.playerId,
                 matchTimeSeconds = matchTimeSeconds,
+                matchDurationSeconds = matchDurationSeconds,
                 countdownTime = countdownTime,
                 isTargetInCrosshair = isTargetInCrosshair,
                 successfulHitCount = successfulHitCount,
@@ -137,13 +139,18 @@ fun TacticalAppContent(
                     viewModel.setTargetStatus(inCrosshair)
                 },
                 onShootTriggered = {
-                    viewModel.triggerShoot()
+                    val localPlayer = players.find { it.id == viewModel.client.playerId }
+                    val isOneShot = localPlayer?.activePowerUp == PowerUpType.ONE_SHOT_KILL
+                    viewModel.triggerShoot(isOneShot)
                 },
                 onConfirmHit = { targetId ->
                     viewModel.confirmHit(targetId)
                 },
                 onExitClicked = {
                     viewModel.disconnect()
+                },
+                onPowerUpActivated = { powerUp ->
+                    viewModel.activatePowerUp(powerUp)
                 }
             )
         }

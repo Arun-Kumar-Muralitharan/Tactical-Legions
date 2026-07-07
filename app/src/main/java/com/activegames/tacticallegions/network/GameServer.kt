@@ -29,6 +29,12 @@ class GameServer {
 
     // Local mutable copy of player states
     private val _playersState = ConcurrentHashMap<String, PlayerState>()
+
+    // Track active powerups activated per player per match
+    private val playerPowerUpCounts = ConcurrentHashMap<String, Int>()
+
+    // Track the last shot time for one-shot kill cooldown
+    private val lastShotTimes = ConcurrentHashMap<String, Long>()
     
     // Exposed server states for Host UI
     private val _serverIp = MutableStateFlow<String>("Unknown")
@@ -130,6 +136,9 @@ class GameServer {
                                             is GameMessage.ActionShoot -> {
                                                 handleShootAction(message.shooterId, message.targetId)
                                             }
+                                            is GameMessage.ActivatePowerUp -> {
+                                                handleActivatePowerUp(message.playerId, message.powerUp)
+                                            }
                                             else -> { /* Other messages ignored on server */ }
                                         }
                                     }
@@ -143,7 +152,7 @@ class GameServer {
                                     if (gameStarted) {
                                         val existing = _playersState[pId]
                                         if (existing != null) {
-                                            _playersState[pId] = existing.copy(isExited = true, isAlive = false, health = 0)
+                                            _playersState[pId] = existing.copy(isExited = true, isAlive = false, health = 0, activePowerUp = null)
                                         }
                                     } else {
                                         // Lobby stage: completely remove them so they don't linger if they disconnect before starting
@@ -230,9 +239,11 @@ class GameServer {
                 }
                 
                 // Reset player health/scores for match start
+                playerPowerUpCounts.clear()
+                lastShotTimes.clear()
                 _playersState.keys.forEach { pId ->
                     val p = _playersState[pId]!!
-                    _playersState[pId] = p.copy(health = 100, isAlive = true, score = 0, isExited = false)
+                    _playersState[pId] = p.copy(health = 100, isAlive = true, score = 0, isExited = false, activePowerUp = null)
                 }
                 broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds, customGameMode, customScoreLimit))
 
@@ -254,13 +265,23 @@ class GameServer {
     private suspend fun handleShootAction(shooterId: String, targetId: String) {
         if (!gameStarted || matchTimeRemaining <= 0) return
 
-        val target = _playersState[targetId] ?: return
         val shooter = _playersState[shooterId] ?: return
+        val target = _playersState[targetId] ?: return
+
+        // 2-second cooldown check for one shot kill powerup
+        if (shooter.activePowerUp == PowerUpType.ONE_SHOT_KILL) {
+            val now = System.currentTimeMillis()
+            val lastShot = lastShotTimes[shooterId] ?: 0L
+            if (now - lastShot < 2000L) {
+                return // Reject shot: cooldown is active
+            }
+            lastShotTimes[shooterId] = now
+        }
 
         // Can only shoot alive players
         if (!target.isAlive || target.health <= 0) return
 
-        val damage = 34
+        val damage = if (shooter.activePowerUp == PowerUpType.ONE_SHOT_KILL) 200 else 34
         val newHealth = (target.health - damage).coerceAtLeast(0)
         
         if (newHealth > 0) {
@@ -269,7 +290,7 @@ class GameServer {
             broadcast(GameMessage.PlayerHit(targetId = targetId, shooterId = shooterId, damage = damage, currentHealth = newHealth))
         } else {
             // Player eliminated
-            _playersState[targetId] = target.copy(health = 0, isAlive = false)
+            _playersState[targetId] = target.copy(health = 0, isAlive = false, activePowerUp = null)
             val newScore = shooter.score + 1
             _playersState[shooterId] = shooter.copy(score = newScore)
             
@@ -285,10 +306,53 @@ class GameServer {
                     delay(5000)
                     val currentTarget = _playersState[targetId]
                     if (currentTarget != null && gameStarted) {
-                        _playersState[targetId] = currentTarget.copy(health = 100, isAlive = true)
+                        _playersState[targetId] = currentTarget.copy(health = 100, isAlive = true, activePowerUp = null)
                         broadcast(GameMessage.Respawned(targetId))
                         broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds, customGameMode, customScoreLimit))
                     }
+                }
+            }
+        }
+    }
+
+    private suspend fun handleActivatePowerUp(playerId: String, powerUp: PowerUpType) {
+        if (customMatchDurationSeconds < 180) return
+        val count = playerPowerUpCounts[playerId] ?: 0
+        if (count >= 2) return
+
+        val existing = _playersState[playerId]
+        if (existing != null && existing.isAlive) {
+            playerPowerUpCounts[playerId] = count + 1
+            val oldPowerUp = existing.activePowerUp
+            var newHealth = existing.health
+            
+            if (powerUp == PowerUpType.HEALTH_BOOST) {
+                newHealth = (existing.health + 300).coerceAtMost(400)
+            } else if (oldPowerUp == PowerUpType.HEALTH_BOOST) {
+                newHealth = existing.health.coerceAtMost(100)
+            }
+
+            _playersState[playerId] = existing.copy(
+                activePowerUp = powerUp,
+                health = newHealth
+            )
+            broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds, customGameMode, customScoreLimit))
+
+            // Revert after 30 seconds
+            serverScope.launch {
+                delay(30000)
+                val current = _playersState[playerId]
+                if (current != null && current.isAlive && current.activePowerUp == powerUp) {
+                    val revertedHealth = if (powerUp == PowerUpType.HEALTH_BOOST) {
+                        current.health.coerceAtMost(100)
+                    } else {
+                        current.health
+                    }
+                    _playersState[playerId] = current.copy(
+                        activePowerUp = null,
+                        health = revertedHealth
+                    )
+                    broadcast(GameMessage.LobbyUpdate(_playersState.values.toList(), customMatchDurationSeconds, customGameMode, customScoreLimit))
                 }
             }
         }

@@ -181,6 +181,12 @@ class GameClient {
         }
     }
 
+    fun activatePowerUp(powerUp: PowerUpType) {
+        clientScope.launch {
+            sendMessage(GameMessage.ActivatePowerUp(playerId, powerUp))
+        }
+    }
+
     fun chooseTeam(team: String) {
         clientScope.launch {
             sendMessage(GameMessage.ChooseTeam(playerId, team))
