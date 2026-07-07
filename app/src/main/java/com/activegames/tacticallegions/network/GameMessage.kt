@@ -3,6 +3,13 @@ package com.activegames.tacticallegions.network
 import kotlinx.serialization.Serializable
 
 @Serializable
+enum class PowerUpType {
+    HEALTH_BOOST,
+    AUTO_GUN,
+    ONE_SHOT_KILL
+}
+
+@Serializable
 data class PlayerState(
     val id: String,
     val name: String,
@@ -12,7 +19,8 @@ data class PlayerState(
     val score: Int,
     val isExited: Boolean = false,
     val team: String = "",
-    val faceSignature: List<Float>? = null
+    val faceSignature: List<Float>? = null,
+    val activePowerUp: PowerUpType? = null
 )
 
 @Serializable
@@ -30,6 +38,9 @@ enum class GameMode {
 
 @Serializable
 sealed class GameMessage {
+    @Serializable
+    data class ActivatePowerUp(val playerId: String, val powerUp: PowerUpType) : GameMessage()
+
     @Serializable
     data class ChooseTeam(val playerId: String, val team: String) : GameMessage()
 

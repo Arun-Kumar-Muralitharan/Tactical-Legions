@@ -8,6 +8,7 @@ import com.activegames.tacticallegions.network.ConnectionState
 import com.activegames.tacticallegions.network.GameClient
 import com.activegames.tacticallegions.network.GameServer
 import com.activegames.tacticallegions.network.PlayerScore
+import com.activegames.tacticallegions.network.PowerUpType
 import com.activegames.tacticallegions.util.SoundHapticHelper
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -128,13 +129,21 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun triggerShoot() {
-        soundHaptic.playShootSound()
-        soundHaptic.vibrateShoot()
+    fun triggerShoot(isOneShot: Boolean = false) {
+        soundHaptic.playShootSound(isOneShot)
+        if (isOneShot) {
+            soundHaptic.vibrateHit()
+        } else {
+            soundHaptic.vibrateShoot()
+        }
     }
 
     fun confirmHit(targetId: String) {
         client.shoot(targetId)
+    }
+
+    fun activatePowerUp(powerUp: PowerUpType) {
+        client.activatePowerUp(powerUp)
     }
 
     var isFaceCoveredDevToggle = mutableStateOf(false)

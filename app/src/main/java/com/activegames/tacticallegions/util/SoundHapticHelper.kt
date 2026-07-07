@@ -20,14 +20,17 @@ class SoundHapticHelper(context: Context) {
     private val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
 
     private var gunshotTrack: AudioTrack? = null
+    private var oneShotTrack: AudioTrack? = null
 
     init {
         try {
             val sampleRate = 44100
-            val duration = 0.4f // 0.4 seconds
+            val random = java.util.Random()
+
+            // 1. Synthesize Normal Gunshot
+            val duration = 0.4f
             val numSamples = (sampleRate * duration).toInt()
             val pcmData = ShortArray(numSamples)
-            val random = java.util.Random()
 
             for (i in 0 until numSamples) {
                 val t = i.toFloat() / sampleRate
@@ -108,13 +111,84 @@ class SoundHapticHelper(context: Context) {
 
             audioTrack.write(pcmData, 0, pcmData.size)
             gunshotTrack = audioTrack
+
+            // 2. Synthesize One-Shot Gunshot (Loud and Deep Heavy Sniper)
+            val osDuration = 0.8f
+            val osSamples = (sampleRate * osDuration).toInt()
+            val osPcmData = ShortArray(osSamples)
+
+            for (i in 0 until osSamples) {
+                val t = i.toFloat() / sampleRate
+                val initialCrackNoise = (random.nextFloat() * 2f - 1f) * Math.exp(-250.0 * t).toFloat()
+                val chirpPhase = 2f * Math.PI.toFloat() * (3000f * t - 90000f * t * t).coerceAtLeast(0f)
+                val chirp = Math.sin(chirpPhase.toDouble()).toFloat() * Math.exp(-120.0 * t).toFloat()
+                
+                // 65Hz heavy thump with longer bass decay echo (thump * 1.6f, decay is Math.exp(-6.0 * t))
+                val thumpPhase = 2f * Math.PI * 65.0 * (1.0 - Math.exp(-25.0 * t)) / 25.0
+                val thump = Math.sin(thumpPhase).toFloat() * Math.exp(-6.0 * t).toFloat()
+                val midNoise = (random.nextFloat() * 2f - 1f) * Math.exp(-25.0 * t).toFloat()
+                val tailNoise = (random.nextFloat() * 2f - 1f) * Math.exp(-4.0 * t).toFloat()
+                
+                val rawSample = (
+                    initialCrackNoise * 1.0f + 
+                    chirp * 0.5f + 
+                    thump * 1.6f + 
+                    midNoise * 0.5f + 
+                    tailNoise * 0.5f
+                )
+                val drive = 2.4f
+                var drivenSample = rawSample * drive
+                if (drivenSample > 1.0f) {
+                    drivenSample = 2.0f / 3.0f
+                } else if (drivenSample < -1.0f) {
+                    drivenSample = -2.0f / 3.0f
+                } else {
+                    drivenSample = drivenSample - (drivenSample * drivenSample * drivenSample) / 3.0f
+                }
+                val finalSample = drivenSample * 1.6f
+                osPcmData[i] = (finalSample * 32767).toInt().coerceIn(-32768, 32767).toShort()
+            }
+
+            val osBufferSize = osSamples * 2
+            val osAudioTrack = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                AudioTrack.Builder()
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_GAME)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build()
+                    )
+                    .setAudioFormat(
+                        AudioFormat.Builder()
+                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                            .setSampleRate(sampleRate)
+                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                            .build()
+                    )
+                    .setBufferSizeInBytes(osBufferSize)
+                    .setTransferMode(AudioTrack.MODE_STATIC)
+                    .build()
+            } else {
+                @Suppress("DEPRECATION")
+                AudioTrack(
+                    AudioManager.STREAM_MUSIC,
+                    sampleRate,
+                    AudioFormat.CHANNEL_OUT_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                    osBufferSize,
+                    AudioTrack.MODE_STATIC
+                )
+            }
+            osAudioTrack.write(osPcmData, 0, osPcmData.size)
+            oneShotTrack = osAudioTrack
+
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
-    fun playShootSound() {
-        val track = gunshotTrack
+    fun playShootSound(isOneShot: Boolean = false) {
+        val track = if (isOneShot) oneShotTrack else gunshotTrack
         if (track != null) {
             try {
                 track.stop()
@@ -154,6 +228,10 @@ class SoundHapticHelper(context: Context) {
 
     fun playRoundEndSound() {
         toneGenerator?.startTone(ToneGenerator.TONE_SUP_ERROR, 800)
+    }
+
+    fun playPowerUpSound() {
+        toneGenerator?.startTone(ToneGenerator.TONE_SUP_PIP, 300)
     }
 
     fun vibrateShoot() {
@@ -198,6 +276,10 @@ class SoundHapticHelper(context: Context) {
         try {
             gunshotTrack?.stop()
             gunshotTrack?.release()
+        } catch (e: Exception) {}
+        try {
+            oneShotTrack?.stop()
+            oneShotTrack?.release()
         } catch (e: Exception) {}
     }
 }

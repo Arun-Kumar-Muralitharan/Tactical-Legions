@@ -22,9 +22,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.animation.core.*
+import com.activegames.tacticallegions.network.PowerUpType
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -51,6 +56,7 @@ fun GameScreen(
     players: List<PlayerState>,
     localPlayerId: String,
     matchTimeSeconds: Int?,
+    matchDurationSeconds: Int,
     countdownTime: Int?,
     isTargetInCrosshair: Boolean,
     successfulHitCount: Int,
@@ -60,7 +66,8 @@ fun GameScreen(
     onTargetStatusChanged: (Boolean) -> Unit,
     onShootTriggered: () -> Unit,
     onConfirmHit: (String) -> Unit,
-    onExitClicked: () -> Unit
+    onExitClicked: () -> Unit,
+    onPowerUpActivated: (PowerUpType) -> Unit = {}
 ) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
@@ -132,6 +139,103 @@ fun GameScreen(
     val health = localPlayer?.health ?: 100
     val isAlive = localPlayer?.isAlive ?: true
     val score = localPlayer?.score ?: 0
+
+    var floatingPowerUp by remember { mutableStateOf<PowerUpType?>(null) }
+    var powerUpPosition by remember { mutableStateOf(Offset.Zero) }
+    var powerUpSpawnTime by remember { mutableStateOf(0L) }
+
+    var activePowerUpTimeLeft by remember { mutableStateOf(0) }
+    var currentActivePowerUp by remember { mutableStateOf<PowerUpType?>(null) }
+
+    var showFlashingHeart by remember { mutableStateOf(false) }
+    var previousHealth by remember { mutableStateOf<Int?>(null) }
+
+    val heartTransition = rememberInfiniteTransition(label = "heart_transition")
+    val heartAlpha by heartTransition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(250, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "heart_alpha"
+    )
+
+    LaunchedEffect(localPlayer?.health) {
+        val currentHealth = localPlayer?.health
+        if (currentHealth != null) {
+            if (previousHealth != null && previousHealth != currentHealth) {
+                showFlashingHeart = true
+                kotlinx.coroutines.delay(1500)
+                showFlashingHeart = false
+            }
+            previousHealth = currentHealth
+        }
+    }
+
+    LaunchedEffect(localPlayer?.activePowerUp) {
+        val newPowerUp = localPlayer?.activePowerUp
+        if (newPowerUp != currentActivePowerUp) {
+            currentActivePowerUp = newPowerUp
+            if (newPowerUp != null) {
+                activePowerUpTimeLeft = 30
+            } else {
+                activePowerUpTimeLeft = 0
+            }
+        }
+    }
+
+    LaunchedEffect(activePowerUpTimeLeft) {
+        if (activePowerUpTimeLeft > 0) {
+            kotlinx.coroutines.delay(1000)
+            activePowerUpTimeLeft--
+        }
+    }
+
+    var hasSpawnedOnce by remember { mutableStateOf(false) }
+    var spawnedCount by remember { mutableStateOf(0) }
+    var collectedCount by remember { mutableStateOf(0) }
+    val isPowerUpFeatureEnabled = matchDurationSeconds >= 180
+    val initialDelayMs = remember(matchDurationSeconds) {
+        kotlin.random.Random.nextLong(30000, 40000)
+    }
+
+    LaunchedEffect(isAlive, spawnedCount) {
+        if (isPowerUpFeatureEnabled && isAlive && spawnedCount < 2) {
+            // 1. First guaranteed spawn (strictly between 30 and 40 seconds)
+            kotlinx.coroutines.delay(initialDelayMs)
+            if (floatingPowerUp == null && !hasSpawnedOnce && spawnedCount < 2) {
+                floatingPowerUp = PowerUpType.values().random()
+                val randomX = kotlin.random.Random.nextFloat() * 0.6f + 0.2f
+                val randomY = kotlin.random.Random.nextFloat() * 0.5f + 0.25f
+                powerUpPosition = Offset(randomX, randomY)
+                powerUpSpawnTime = System.currentTimeMillis()
+                hasSpawnedOnce = true
+                spawnedCount++
+            }
+
+            // 2. Subsequent random spawns
+            while (spawnedCount < 2) {
+                val delayMs = kotlin.random.Random.nextLong(20000, 40000)
+                kotlinx.coroutines.delay(delayMs)
+                if (floatingPowerUp == null && spawnedCount < 2) {
+                    floatingPowerUp = PowerUpType.values().random()
+                    val randomX = kotlin.random.Random.nextFloat() * 0.6f + 0.2f
+                    val randomY = kotlin.random.Random.nextFloat() * 0.5f + 0.25f
+                    powerUpPosition = Offset(randomX, randomY)
+                    powerUpSpawnTime = System.currentTimeMillis()
+                    spawnedCount++
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(floatingPowerUp, powerUpSpawnTime) {
+        if (floatingPowerUp != null) {
+            kotlinx.coroutines.delay(3000L)
+            floatingPowerUp = null
+        }
+    }
 
     // Show selection dialog when user tapped trigger and target was locked
     var showExitConfirmation by remember { mutableStateOf(false) }
@@ -509,58 +613,124 @@ fun GameScreen(
                 )
             }
 
-            // Health Status Bar
-            Card(
-                modifier = Modifier.fillMaxWidth(0.6f),
-                colors = CardDefaults.cardColors(containerColor = SurfaceGray.copy(alpha = 0.7f)),
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, GlassWhite)
+            // Health Status Bar and Active Power-up Badge
+            val isHealthBoosted = localPlayer?.activePowerUp == PowerUpType.HEALTH_BOOST
+            val maxHealth = if (isHealthBoosted) 400 else 100
+            val healthText = if (isHealthBoosted) "$health/400 HP" else "$health%"
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Row(
-                    modifier = Modifier.padding(8.dp),
+                    modifier = Modifier.fillMaxWidth(0.85f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "HP ",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (health > 34) CyberGreen else CyberRed
-                    )
-                    
-                    // Simple Segmented Health Bar
-                    Row(
+                    Card(
                         modifier = Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        colors = CardDefaults.cardColors(containerColor = SurfaceGray.copy(alpha = 0.7f)),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, GlassWhite)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(if (health >= 34) CyberGreen else Color.Gray.copy(alpha = 0.3f))
-                        )
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(if (health >= 66) CyberGreen else Color.Gray.copy(alpha = 0.3f))
-                        )
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(if (health >= 100) CyberGreen else Color.Gray.copy(alpha = 0.3f))
+                        Row(
+                            modifier = Modifier.padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (showFlashingHeart) {
+                                Text(
+                                    text = "❤️",
+                                    fontSize = 14.sp,
+                                    modifier = Modifier
+                                        .graphicsLayer { alpha = heartAlpha }
+                                        .padding(end = 4.dp)
+                                )
+                            }
+                            Text(
+                                text = "HP ",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (health > maxHealth * 0.34f) CyberGreen else CyberRed
+                            )
+                            
+                            // Simple Segmented Health Bar
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(8.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(if (health >= maxHealth * 0.34f) CyberGreen else Color.Gray.copy(alpha = 0.3f))
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(8.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(if (health >= maxHealth * 0.66f) CyberGreen else Color.Gray.copy(alpha = 0.3f))
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(8.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(if (health >= maxHealth) CyberGreen else Color.Gray.copy(alpha = 0.3f))
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = healthText,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White
+                            )
+                        }
+                    }
+
+                    // Active Power-up Badge (if any)
+                    localPlayer?.activePowerUp?.let { activePower ->
+                        val (badgeName, badgeColor) = when (activePower) {
+                            PowerUpType.HEALTH_BOOST -> Pair("+300 HP", Color(0xFF00FF66))
+                            PowerUpType.AUTO_GUN -> Pair("AUTO FIRE", Color(0xFF00F0FF))
+                            PowerUpType.ONE_SHOT_KILL -> Pair("1-SHOT", Color(0xFFFF0055))
+                        }
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SurfaceGray.copy(alpha = 0.85f)),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.5.dp, badgeColor)
+                        ) {
+                            Text(
+                                text = "$badgeName (${activePowerUpTimeLeft}s)",
+                                color = badgeColor,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                letterSpacing = 1.sp
+                            )
+                        }
+                    }
+                }
+
+                // Small Power-up countdown timer row underneath the health bar
+                if (localPlayer?.activePowerUp != null && activePowerUpTimeLeft > 0) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(0.85f),
+                        horizontalArrangement = Arrangement.Start,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "⏱️ POWER-UP ACTIVE: ${activePowerUpTimeLeft}s",
+                            color = Color(0xFFFFEA00), // Cyber Yellow
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.padding(start = 4.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "$health%",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
                 }
             }
         }
@@ -607,30 +777,230 @@ fun GameScreen(
                         )
                     }
 
-                    // FIRE trigger
-                    Button(
-                        onClick = {
-                            onShootTriggered()
-                            if (isTargetInCrosshair) {
-                                activeTargetId?.let { targetId ->
-                                    onConfirmHit(targetId)
+                    val isAutoGunActive = localPlayer?.activePowerUp == PowerUpType.AUTO_GUN
+                    val isOneShotKillActive = localPlayer?.activePowerUp == PowerUpType.ONE_SHOT_KILL
+                    var isPressing by remember { mutableStateOf(false) }
+                    var lastShootTime by remember { mutableStateOf(0L) }
+
+                    if (isAutoGunActive) {
+                        LaunchedEffect(isPressing, isTargetInCrosshair, activeTargetId) {
+                            if (isPressing) {
+                                while (true) {
+                                    onShootTriggered()
+                                    if (isTargetInCrosshair) {
+                                        activeTargetId?.let { targetId ->
+                                            onConfirmHit(targetId)
+                                        }
+                                    }
+                                    kotlinx.coroutines.delay(200L)
                                 }
                             }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = CyberRed),
-                        shape = CircleShape,
+                        }
+                    }
+
+                    // FIRE trigger
+                    Box(
+                        contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .size(80.dp)
-                            .border(BorderStroke(2.dp, Color.White), CircleShape),
-                        contentPadding = PaddingValues(0.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.15f))
+                            .border(BorderStroke(2.5.dp, Color.White), CircleShape)
+                            .pointerInput(isAutoGunActive, isOneShotKillActive, isTargetInCrosshair, activeTargetId, lastShootTime) {
+                                detectTapGestures(
+                                    onPress = {
+                                        if (isAutoGunActive) {
+                                            isPressing = true
+                                            try {
+                                                awaitRelease()
+                                            } finally {
+                                                isPressing = false
+                                            }
+                                        } else {
+                                            val now = System.currentTimeMillis()
+                                            if (isOneShotKillActive) {
+                                                if (now - lastShootTime >= 2000L) {
+                                                    onShootTriggered()
+                                                    lastShootTime = now
+                                                    if (isTargetInCrosshair) {
+                                                        activeTargetId?.let { targetId ->
+                                                            onConfirmHit(targetId)
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                onShootTriggered()
+                                                if (isTargetInCrosshair) {
+                                                    activeTargetId?.let { targetId ->
+                                                        onConfirmHit(targetId)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                )
+                            }
                     ) {
-                        Text(
-                            text = "FIRE",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 14.sp,
-                            color = Color.White,
-                            letterSpacing = 1.sp
-                        )
+                        Canvas(modifier = Modifier.size(36.dp)) {
+                            val w = size.width
+                            val h = size.height
+                            
+                            if (isOneShotKillActive) {
+                                // Draw the bottleneck rifle bullet shape from the second user image
+                                val left = w * 0.36f
+                                val right = w * 0.64f
+                                val shoulderBottomY = h * 0.48f
+                                val shoulderTopY = h * 0.38f
+                                val neckLeft = w * 0.44f
+                                val neckRight = w * 0.56f
+                                val neckTopY = h * 0.28f
+                                val peakY = h * 0.05f
+                                val baseY = h * 0.85f
+                                val rimY = h * 0.93f
+                                val indent = w * 0.03f
+
+                                val path = androidx.compose.ui.graphics.Path().apply {
+                                    moveTo(left + indent, baseY)
+                                    lineTo(left, shoulderBottomY)
+                                    lineTo(neckLeft, shoulderTopY)
+                                    lineTo(neckLeft, neckTopY)
+                                    lineTo(w * 0.5f, peakY)
+                                    lineTo(neckRight, neckTopY)
+                                    lineTo(neckRight, shoulderTopY)
+                                    lineTo(right, shoulderBottomY)
+                                    lineTo(right - indent, baseY)
+                                    lineTo(right - indent, baseY + h * 0.04f)
+                                    lineTo(right, baseY + h * 0.04f)
+                                    lineTo(right, rimY)
+                                    lineTo(left, rimY)
+                                    lineTo(left, baseY + h * 0.04f)
+                                    lineTo(left + indent, baseY + h * 0.04f)
+                                    lineTo(left + indent, baseY)
+                                    close()
+                                }
+
+                                drawPath(
+                                    path = path,
+                                    color = Color.White,
+                                    style = Stroke(width = 2.dp.toPx())
+                                )
+
+                                drawLine(
+                                    color = Color.White,
+                                    start = Offset(left, shoulderBottomY),
+                                    end = Offset(right, shoulderBottomY),
+                                    strokeWidth = 2.dp.toPx()
+                                )
+                                drawLine(
+                                    color = Color.White,
+                                    start = Offset(neckLeft, shoulderTopY),
+                                    end = Offset(neckRight, shoulderTopY),
+                                    strokeWidth = 2.dp.toPx()
+                                )
+                                drawLine(
+                                    color = Color.White,
+                                    start = Offset(neckLeft, neckTopY),
+                                    end = Offset(neckRight, neckTopY),
+                                    strokeWidth = 2.dp.toPx()
+                                )
+                            } else if (isAutoGunActive) {
+                                // Draw the assault rifle shape from the third user image
+                                val leftX = w * 0.12f
+                                val rightX = w * 0.88f
+                                val centerY = h * 0.50f
+                                
+                                val path = androidx.compose.ui.graphics.Path().apply {
+                                    // Stock
+                                    moveTo(leftX, centerY - h * 0.08f)
+                                    lineTo(leftX, centerY + h * 0.08f)
+                                    lineTo(w * 0.32f, centerY + h * 0.03f)
+                                    
+                                    // Pistol grip
+                                    lineTo(w * 0.34f, centerY + h * 0.18f)
+                                    lineTo(w * 0.38f, centerY + h * 0.18f)
+                                    lineTo(w * 0.38f, centerY + h * 0.03f)
+                                    
+                                    // Magazine (banana mag)
+                                    lineTo(w * 0.42f, centerY + h * 0.03f)
+                                    quadraticBezierTo(w * 0.45f, centerY + h * 0.15f, w * 0.50f, centerY + h * 0.22f)
+                                    lineTo(w * 0.55f, centerY + h * 0.20f)
+                                    quadraticBezierTo(w * 0.49f, centerY + h * 0.12f, w * 0.48f, centerY + h * 0.03f)
+                                    
+                                    // Receiver / Handguard bottom
+                                    lineTo(w * 0.70f, centerY + h * 0.03f)
+                                    
+                                    // Barrel front bottom
+                                    lineTo(w * 0.70f, centerY + h * 0.01f)
+                                    lineTo(rightX, centerY + h * 0.01f)
+                                    
+                                    // Muzzle / Front sight
+                                    lineTo(rightX, centerY - h * 0.04f)
+                                    lineTo(rightX - w * 0.02f, centerY - h * 0.04f)
+                                    lineTo(rightX - w * 0.02f, centerY - h * 0.01f)
+                                    
+                                    // Gas block / Gas tube top
+                                    lineTo(w * 0.70f, centerY - h * 0.01f)
+                                    lineTo(w * 0.70f, centerY - h * 0.03f)
+                                    lineTo(w * 0.56f, centerY - h * 0.03f)
+                                    
+                                    // Receiver top
+                                    lineTo(w * 0.56f, centerY - h * 0.04f)
+                                    lineTo(w * 0.32f, centerY - h * 0.04f)
+                                    close()
+                                }
+
+                                drawPath(
+                                    path = path,
+                                    color = Color.White,
+                                    style = Stroke(width = 1.8.dp.toPx())
+                                )
+                                
+                                // Draw trigger guard (circle/arc) and trigger
+                                drawCircle(
+                                    color = Color.White,
+                                    radius = 3.dp.toPx(),
+                                    center = Offset(w * 0.40f, centerY + h * 0.06f),
+                                    style = Stroke(width = 1.2.dp.toPx())
+                                )
+                            } else {
+                                // Draw the standard pistol bullet shape from the first user image
+                                val left = w * 0.33f
+                                val right = w * 0.67f
+                                val topY = h * 0.12f
+                                val shoulderY = h * 0.42f
+                                val baseY = h * 0.82f
+                                val rimY = h * 0.90f
+                                val indent = w * 0.05f
+
+                                val path = androidx.compose.ui.graphics.Path().apply {
+                                    moveTo(left + indent, baseY)
+                                    lineTo(left, shoulderY)
+                                    cubicTo(left, topY, right, topY, right, shoulderY)
+                                    lineTo(right - indent, baseY)
+                                    lineTo(right - indent, baseY + h * 0.04f)
+                                    lineTo(right, baseY + h * 0.04f)
+                                    lineTo(right, rimY)
+                                    lineTo(left, rimY)
+                                    lineTo(left, baseY + h * 0.04f)
+                                    lineTo(left + indent, baseY + h * 0.04f)
+                                    lineTo(left + indent, baseY)
+                                    close()
+                                }
+
+                                drawPath(
+                                    path = path,
+                                    color = Color.White,
+                                    style = Stroke(width = 2.dp.toPx())
+                                )
+
+                                drawLine(
+                                    color = Color.White,
+                                    start = Offset(left, shoulderY),
+                                    end = Offset(right, shoulderY),
+                                    strokeWidth = 2.dp.toPx()
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -693,6 +1063,92 @@ fun GameScreen(
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 32.dp)
                     )
+                }
+            }
+        }
+
+        floatingPowerUp?.let { pType ->
+            val biasX = (powerUpPosition.x * 2f) - 1f
+            val biasY = (powerUpPosition.y * 2f) - 1f
+            
+            val infiniteTransition = rememberInfiniteTransition(label = "powerup")
+            val bobOffset by infiniteTransition.animateFloat(
+                initialValue = -12f,
+                targetValue = 12f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(1000, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "bob"
+            )
+            val glowScale by infiniteTransition.animateFloat(
+                initialValue = 0.9f,
+                targetValue = 1.1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(600, easing = LinearOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "glow"
+            )
+
+            val (name, color, icon) = when (pType) {
+                PowerUpType.HEALTH_BOOST -> Triple("HEALTH BOOST", Color(0xFF00FF66), "➕")
+                PowerUpType.AUTO_GUN -> Triple("AUTO FIRE", Color(0xFF00F0FF), "⚡")
+                PowerUpType.ONE_SHOT_KILL -> Triple("1-SHOT KILL", Color(0xFFFF0055), "🎯")
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                contentAlignment = BiasAlignment(biasX, biasY)
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.75f)),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(2.dp, color),
+                    modifier = Modifier
+                        .size(100.dp)
+                        .graphicsLayer {
+                            translationY = bobOffset
+                            shadowElevation = 8.dp.toPx()
+                        }
+                        .clickable {
+                            if (collectedCount < 2) {
+                                onPowerUpActivated(pType)
+                                activePowerUpTimeLeft = 30
+                                collectedCount++
+                            }
+                            floatingPowerUp = null
+                        }
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .graphicsLayer {
+                                    scaleX = glowScale
+                                    scaleY = glowScale
+                                }
+                                .background(color.copy(alpha = 0.15f), CircleShape)
+                        ) {
+                            Text(text = icon, fontSize = 24.sp)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = name,
+                            color = color,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
         }
