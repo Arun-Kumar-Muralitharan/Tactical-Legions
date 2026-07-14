@@ -28,6 +28,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.painter.ColorPainter
+import android.graphics.BitmapFactory
 import androidx.compose.animation.core.*
 import com.activegames.tacticallegions.network.PowerUpType
 import androidx.compose.ui.graphics.Color
@@ -50,6 +56,21 @@ import com.activegames.tacticallegions.network.PlayerState
 import com.activegames.tacticallegions.theme.*
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+
+@Composable
+fun rememberAssetPainter(assetName: String): Painter {
+    val context = LocalContext.current
+    return remember(assetName) {
+        try {
+            context.assets.open(assetName).use { stream ->
+                val bitmap = BitmapFactory.decodeStream(stream)
+                BitmapPainter(bitmap.asImageBitmap())
+            }
+        } catch (e: Exception) {
+            ColorPainter(Color.Transparent)
+        }
+    }
+}
 
 @Composable
 fun GameScreen(
@@ -841,166 +862,17 @@ fun GameScreen(
                                 )
                             }
                     ) {
-                        Canvas(modifier = Modifier.size(36.dp)) {
-                            val w = size.width
-                            val h = size.height
-                            
-                            if (isOneShotKillActive) {
-                                // Draw the bottleneck rifle bullet shape from the second user image
-                                val left = w * 0.36f
-                                val right = w * 0.64f
-                                val shoulderBottomY = h * 0.48f
-                                val shoulderTopY = h * 0.38f
-                                val neckLeft = w * 0.44f
-                                val neckRight = w * 0.56f
-                                val neckTopY = h * 0.28f
-                                val peakY = h * 0.05f
-                                val baseY = h * 0.85f
-                                val rimY = h * 0.93f
-                                val indent = w * 0.03f
-
-                                val path = androidx.compose.ui.graphics.Path().apply {
-                                    moveTo(left + indent, baseY)
-                                    lineTo(left, shoulderBottomY)
-                                    lineTo(neckLeft, shoulderTopY)
-                                    lineTo(neckLeft, neckTopY)
-                                    lineTo(w * 0.5f, peakY)
-                                    lineTo(neckRight, neckTopY)
-                                    lineTo(neckRight, shoulderTopY)
-                                    lineTo(right, shoulderBottomY)
-                                    lineTo(right - indent, baseY)
-                                    lineTo(right - indent, baseY + h * 0.04f)
-                                    lineTo(right, baseY + h * 0.04f)
-                                    lineTo(right, rimY)
-                                    lineTo(left, rimY)
-                                    lineTo(left, baseY + h * 0.04f)
-                                    lineTo(left + indent, baseY + h * 0.04f)
-                                    lineTo(left + indent, baseY)
-                                    close()
-                                }
-
-                                drawPath(
-                                    path = path,
-                                    color = Color.White,
-                                    style = Stroke(width = 2.dp.toPx())
-                                )
-
-                                drawLine(
-                                    color = Color.White,
-                                    start = Offset(left, shoulderBottomY),
-                                    end = Offset(right, shoulderBottomY),
-                                    strokeWidth = 2.dp.toPx()
-                                )
-                                drawLine(
-                                    color = Color.White,
-                                    start = Offset(neckLeft, shoulderTopY),
-                                    end = Offset(neckRight, shoulderTopY),
-                                    strokeWidth = 2.dp.toPx()
-                                )
-                                drawLine(
-                                    color = Color.White,
-                                    start = Offset(neckLeft, neckTopY),
-                                    end = Offset(neckRight, neckTopY),
-                                    strokeWidth = 2.dp.toPx()
-                                )
-                            } else if (isAutoGunActive) {
-                                // Draw the assault rifle shape from the third user image
-                                val leftX = w * 0.12f
-                                val rightX = w * 0.88f
-                                val centerY = h * 0.50f
-                                
-                                val path = androidx.compose.ui.graphics.Path().apply {
-                                    // Stock
-                                    moveTo(leftX, centerY - h * 0.08f)
-                                    lineTo(leftX, centerY + h * 0.08f)
-                                    lineTo(w * 0.32f, centerY + h * 0.03f)
-                                    
-                                    // Pistol grip
-                                    lineTo(w * 0.34f, centerY + h * 0.18f)
-                                    lineTo(w * 0.38f, centerY + h * 0.18f)
-                                    lineTo(w * 0.38f, centerY + h * 0.03f)
-                                    
-                                    // Magazine (banana mag)
-                                    lineTo(w * 0.42f, centerY + h * 0.03f)
-                                    quadraticBezierTo(w * 0.45f, centerY + h * 0.15f, w * 0.50f, centerY + h * 0.22f)
-                                    lineTo(w * 0.55f, centerY + h * 0.20f)
-                                    quadraticBezierTo(w * 0.49f, centerY + h * 0.12f, w * 0.48f, centerY + h * 0.03f)
-                                    
-                                    // Receiver / Handguard bottom
-                                    lineTo(w * 0.70f, centerY + h * 0.03f)
-                                    
-                                    // Barrel front bottom
-                                    lineTo(w * 0.70f, centerY + h * 0.01f)
-                                    lineTo(rightX, centerY + h * 0.01f)
-                                    
-                                    // Muzzle / Front sight
-                                    lineTo(rightX, centerY - h * 0.04f)
-                                    lineTo(rightX - w * 0.02f, centerY - h * 0.04f)
-                                    lineTo(rightX - w * 0.02f, centerY - h * 0.01f)
-                                    
-                                    // Gas block / Gas tube top
-                                    lineTo(w * 0.70f, centerY - h * 0.01f)
-                                    lineTo(w * 0.70f, centerY - h * 0.03f)
-                                    lineTo(w * 0.56f, centerY - h * 0.03f)
-                                    
-                                    // Receiver top
-                                    lineTo(w * 0.56f, centerY - h * 0.04f)
-                                    lineTo(w * 0.32f, centerY - h * 0.04f)
-                                    close()
-                                }
-
-                                drawPath(
-                                    path = path,
-                                    color = Color.White,
-                                    style = Stroke(width = 1.8.dp.toPx())
-                                )
-                                
-                                // Draw trigger guard (circle/arc) and trigger
-                                drawCircle(
-                                    color = Color.White,
-                                    radius = 3.dp.toPx(),
-                                    center = Offset(w * 0.40f, centerY + h * 0.06f),
-                                    style = Stroke(width = 1.2.dp.toPx())
-                                )
-                            } else {
-                                // Draw the standard pistol bullet shape from the first user image
-                                val left = w * 0.33f
-                                val right = w * 0.67f
-                                val topY = h * 0.12f
-                                val shoulderY = h * 0.42f
-                                val baseY = h * 0.82f
-                                val rimY = h * 0.90f
-                                val indent = w * 0.05f
-
-                                val path = androidx.compose.ui.graphics.Path().apply {
-                                    moveTo(left + indent, baseY)
-                                    lineTo(left, shoulderY)
-                                    cubicTo(left, topY, right, topY, right, shoulderY)
-                                    lineTo(right - indent, baseY)
-                                    lineTo(right - indent, baseY + h * 0.04f)
-                                    lineTo(right, baseY + h * 0.04f)
-                                    lineTo(right, rimY)
-                                    lineTo(left, rimY)
-                                    lineTo(left, baseY + h * 0.04f)
-                                    lineTo(left + indent, baseY + h * 0.04f)
-                                    lineTo(left + indent, baseY)
-                                    close()
-                                }
-
-                                drawPath(
-                                    path = path,
-                                    color = Color.White,
-                                    style = Stroke(width = 2.dp.toPx())
-                                )
-
-                                drawLine(
-                                    color = Color.White,
-                                    start = Offset(left, shoulderY),
-                                    end = Offset(right, shoulderY),
-                                    strokeWidth = 2.dp.toPx()
-                                )
-                            }
+                        val assetName = when {
+                            isOneShotKillActive -> "sniper_bullet.png"
+                            isAutoGunActive -> "assault_rifle.png"
+                            else -> "pistol_bullet.png"
                         }
+                        val painter = rememberAssetPainter(assetName)
+                        Image(
+                            painter = painter,
+                            contentDescription = null,
+                            modifier = Modifier.size(36.dp)
+                        )
                     }
                 }
             }
